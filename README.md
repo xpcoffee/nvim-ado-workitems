@@ -16,14 +16,22 @@ require("ado").setup({
 })
 ```
 
+## Editing
+
+The detail buffer is read-only. Put the cursor on a field and press `<CR>` (or
+an insert key: `i`/`a`/`o`…) to open a focused floating editor for just that
+field — text fields get a one-line input, State a select, Description a markdown
+pane. Confirm with `<CR>` (`<C-s>` in the multi-line description), cancel with
+`q`/`<Esc>`. The float closes itself and the change saves on confirm (with a
+`rev` guard); nothing to clean up.
+
 ## Keymaps
 
-Wire these to the public API (the dotfiles spec does this):
+Global (wired by the dotfiles spec): `require("ado").my_items()` / `.search()` /
+`.open_prompt()`.
 
-| Key | Action |
-|---|---|
-| global | `require("ado").my_items()` / `.search()` / `.open_prompt()` |
-| in a work-item buffer | `,ww` save · `,wc` comment · `,wS` state · `,we` edit description · `,wb` browser · `,wr` reload |
+In a work-item buffer: `<CR>`/`i` edit field under cursor · `,wc` comment ·
+`,wS` state · `,we` description · `,wb` browser · `,wr` reload.
 
 In a picker: `<CR>` open · `<C-s>` change state · `<C-y>` yank id+url · `<C-o>` browser.
 

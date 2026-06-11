@@ -1,22 +1,23 @@
--- Work-item view model + buffers. Owns the normalised item shape, the detail
--- buffer (editable field block + read-only context + description preview), the
--- separate description-edit buffer, and the BufWriteCmd save-back for both.
+-- Work-item view model + detail buffer. The detail buffer is read-only; pressing
+-- <CR> or an insert key on a field opens a floating editor for that one field
+-- (float.lua owns the editor lifecycle). State uses a select; the description
+-- uses a markdown float. All writes go through do_update + the rev guard.
 local client = require("ado.client")
 local config = require("ado.config")
+local float = require("ado.float")
 
 local M = {}
 
--- bufnr -> { item } for detail buffers.
+-- bufnr -> { item, field_lines, desc_start, desc_editable }
 local detail = {}
--- description bufnr -> { item, parent, original_html, md } for edit buffers.
-local desc = {}
 
 -- ── conversion ────────────────────────────────────────────────────────────
 -- Synchronous pandoc round-trip. Descriptions are small, so a blocking :wait()
 -- on the main loop is imperceptible; falls back to raw text if pandoc is absent
--- or errors.
-local function html_to_md(html)
-  if html == nil or html == "" then return {} end
+-- or errors. pandoc's "markdown" bundles raw_html, so real <a href> survives the
+-- round-trip; do not switch to gfm (it autolinks bare emails).
+local function to_editable(html)
+  if html == nil or html == "" then return { "" } end
   if vim.fn.executable("pandoc") ~= 1 then
     return vim.split(html, "\n", { plain = true })
   end
@@ -28,9 +29,11 @@ local function html_to_md(html)
   end
   return vim.split((res.stdout or ""):gsub("\n+$", ""), "\n", { plain = true })
 end
-M.html_to_md = html_to_md
+M.to_editable = to_editable
+M.html_to_md = to_editable -- picker preview requires this name
 
-local function md_to_html(md)
+local function from_editable(lines)
+  local md = table.concat(lines, "\n")
   if vim.fn.executable("pandoc") ~= 1 then return md end
   local res = vim.system(
     { "pandoc", "-f", "markdown", "-t", "html", "--wrap=none" },
@@ -89,8 +92,15 @@ end
 M.browser_open = browser_open
 
 -- ── detail buffer ────────────────────────────────────────────────────────────
+-- Header line indices map to editable fields; lines from desc_start on are the
+-- description. Kept in lockstep with the literal below so they can't drift.
+local FIELD_LINES = { [2] = "title", [3] = "state", [4] = "assignee", [5] = "tags", [6] = "iteration" }
+local FIELD_LABELS = { title = "Title", tags = "Tags", iteration = "Iteration", assignee = "Assignee" }
+
 local function render(buf, item)
-  local lines = {
+  local entry = detail[buf]
+  if not entry then return end
+  local header = {
     string.format("# %s  %s  %s", item.id, item.type, item.state),
     "Title:     " .. item.title,
     "State:     " .. item.state,
@@ -105,46 +115,26 @@ local function render(buf, item)
     "---",
     "## Description",
   }
-  vim.list_extend(lines, html_to_md(item.description_html))
+  local desc_editable = to_editable(item.description_html)
+  entry.field_lines = FIELD_LINES
+  entry.desc_start = #header -- the "## Description" line
+  entry.desc_editable = desc_editable
+
+  local lines = {}
+  vim.list_extend(lines, header)
+  vim.list_extend(lines, desc_editable)
+
   vim.bo[buf].modifiable = true
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-  vim.bo[buf].modified = false
+  vim.bo[buf].modifiable = false
 end
 
--- Parse the editable field block (everything before the first '---').
-local function parse_fields(buf)
-  local out = {}
-  for _, line in ipairs(vim.api.nvim_buf_get_lines(buf, 0, -1, false)) do
-    if line:match("^%-%-%-") then break end
-    local key, val = line:match("^(%a+):%s*(.-)%s*$")
-    if key then out[key:lower()] = val end
-  end
-  return out
-end
-
-local function save_fields(buf)
+-- Single write path: rev-guard, update, re-render. The editor float is already
+-- closed by the time this runs, so a slow `az` never leaves a window behind.
+local function do_update(buf, fields)
   local entry = detail[buf]
   if not entry then return end
   local item = entry.item
-  local parsed = parse_fields(buf)
-
-  local update = {}
-  if parsed.title and parsed.title ~= item.title then update.title = parsed.title end
-  if parsed.state and parsed.state ~= item.state then update.state = parsed.state end
-  if parsed.tags and parsed.tags ~= item.tags then update.tags = parsed.tags end
-  if parsed.iteration and parsed.iteration ~= item.iteration then update.iteration = parsed.iteration end
-  if parsed.assignee and parsed.assignee ~= render_assignee(item) then
-    update.assignee = parsed.assignee
-  end
-
-  if vim.tbl_isempty(update) then
-    vim.notify("[ado] no field changes", vim.log.levels.INFO)
-    vim.bo[buf].modified = false
-    return
-  end
-
-  -- Re-check the remote revision before writing; abort rather than clobber a
-  -- concurrent edit. A true check-then-write race remains (acceptable single-user).
   client.show(item.id, function(ok, raw)
     if not ok then return end
     if raw.rev ~= item.rev then
@@ -153,8 +143,9 @@ local function save_fields(buf)
         item.id, tostring(item.rev), tostring(raw.rev)), vim.log.levels.WARN)
       return
     end
-    client.update(item.id, update, function(ok2, updated)
+    client.update(item.id, fields, function(ok2, updated)
       if not ok2 then return end
+      if not detail[buf] or not vim.api.nvim_buf_is_valid(buf) then return end
       entry.item = normalise(updated)
       render(buf, entry.item)
       vim.notify("[ado] updated #" .. item.id, vim.log.levels.INFO)
@@ -162,23 +153,94 @@ local function save_fields(buf)
   end)
 end
 
+-- Open the right editor for one field. Text fields use a single-line float,
+-- state a select, description a markdown float.
+function M.edit_field(buf, field)
+  local entry = detail[buf]
+  if not entry then return end
+  local item = entry.item
+
+  if field == "state" then
+    M.pick_state(item, function(state)
+      if state == item.state then return end
+      do_update(buf, { state = state })
+    end)
+    return
+  end
+
+  if field == "description" then
+    -- Snapshot the baseline now; a reload/re-render could swap entry.desc_editable
+    -- underneath us before the float is confirmed.
+    local baseline = entry.desc_editable
+    float.text({
+      title = "Description  (<C-s> save · q cancel)",
+      lines = baseline,
+      filetype = "markdown",
+      multiline = true,
+      width = math.floor(vim.o.columns * 0.7),
+      height = math.floor(vim.o.lines * 0.6),
+      on_confirm = function(new_lines)
+        -- Unchanged body: skip the lossy round-trip and leave the HTML as-is.
+        if vim.deep_equal(new_lines, baseline) then
+          vim.notify("[ado] description unchanged", vim.log.levels.INFO)
+          return
+        end
+        do_update(buf, { description = from_editable(new_lines) })
+      end,
+    })
+    return
+  end
+
+  local current = ({
+    title = item.title,
+    tags = item.tags,
+    iteration = item.iteration,
+    assignee = render_assignee(item),
+  })[field]
+  if current == nil then return end
+  float.text({
+    title = (FIELD_LABELS[field] or field) .. "  (<CR> save · q cancel)",
+    lines = { current },
+    height = 1,
+    on_confirm = function(new_lines)
+      local val = table.concat(new_lines, " ")
+      if val == current then return end
+      do_update(buf, { [field] = val })
+    end,
+  })
+end
+
+-- Dispatch from the cursor line to the field under it; no-op on other lines.
+local function dispatch_edit(buf)
+  local entry = detail[buf]
+  if not entry then return end
+  local row = vim.api.nvim_win_get_cursor(0)[1]
+  local field = entry.field_lines and entry.field_lines[row]
+  if not field and entry.desc_start and row >= entry.desc_start then
+    field = "description"
+  end
+  if field then M.edit_field(buf, field) end
+end
+
 local function load(buf, id)
   client.show(id, function(ok, raw)
     if not ok then return end
-    local item = normalise(raw)
-    detail[buf] = { item = item }
-    render(buf, item)
+    detail[buf] = { item = normalise(raw) }
+    render(buf, detail[buf].item)
   end)
 end
 
 local function set_detail_keymaps(buf)
   local function k(lhs, fn, d)
-    vim.keymap.set("n", lhs, fn, { buffer = buf, desc = d, remap = false })
+    vim.keymap.set("n", lhs, fn, { buffer = buf, desc = d, remap = false, nowait = true })
   end
-  k("<leader>ww", function() vim.cmd("write") end, "Save work item")
+  -- <CR> and insert-entry keys edit the field under the cursor.
+  for _, key in ipairs({ "<CR>", "i", "a", "I", "A", "o", "O" }) do
+    k(key, function() dispatch_edit(buf) end, "ado: edit field under cursor")
+  end
   k("<leader>wc", function() M.add_comment(buf) end, "Add comment")
-  k("<leader>wS", function() M.change_state(buf) end, "Change state")
-  k("<leader>we", function() M.edit_description(buf) end, "Edit description")
+  k("<leader>wS", function() M.edit_field(buf, "state") end, "Change state")
+  k("<leader>we", function() M.edit_field(buf, "description") end, "Edit description")
   k("<leader>wb", function() browser_open(detail[buf] and detail[buf].item.url) end, "Open in browser")
   k("<leader>wr", function() M.reload(buf) end, "Reload work item")
 end
@@ -188,21 +250,20 @@ function M.open(id)
   local existing = vim.fn.bufnr(name)
   if existing ~= -1 and vim.api.nvim_buf_is_valid(existing) then
     vim.api.nvim_set_current_buf(existing)
-    M.reload(existing)
+    -- If a prior load failed, detail[existing] is nil and reload can't recover
+    -- (it needs the stored id); load fresh from the id we have.
+    if detail[existing] then M.reload(existing) else load(existing, id) end
     return
   end
   local buf = vim.api.nvim_create_buf(true, false)
   vim.api.nvim_buf_set_name(buf, name)
-  vim.bo[buf].buftype = "acwrite"
+  vim.bo[buf].buftype = "nofile"
   vim.bo[buf].swapfile = false
   vim.bo[buf].filetype = "adoitem"
-  vim.api.nvim_set_current_buf(buf)
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "[loading #" .. id .. "]" })
+  vim.bo[buf].modifiable = false
+  vim.api.nvim_set_current_buf(buf)
 
-  vim.api.nvim_create_autocmd("BufWriteCmd", {
-    buffer = buf,
-    callback = function() save_fields(buf) end,
-  })
   vim.api.nvim_create_autocmd("BufWipeout", {
     buffer = buf,
     callback = function() detail[buf] = nil end,
@@ -216,78 +277,7 @@ function M.reload(buf)
   if entry then load(buf, entry.item.id) end
 end
 
--- ── description-edit buffer ───────────────────────────────────────────────────
-local function save_description(buf)
-  local base = desc[buf]
-  if not base then return end
-  local item = base.item
-  local md = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n")
-
-  -- Unchanged body: leave the original HTML untouched, skip the lossy round-trip.
-  if md == base.md then
-    vim.notify("[ado] description unchanged", vim.log.levels.INFO)
-    vim.bo[buf].modified = false
-    return
-  end
-
-  client.show(item.id, function(ok, raw)
-    if not ok then return end
-    if raw.rev ~= item.rev then
-      vim.notify(string.format(
-        "[ado] #%s changed remotely (rev %s -> %s); reopen before saving",
-        item.id, tostring(item.rev), tostring(raw.rev)), vim.log.levels.WARN)
-      return
-    end
-    client.update(item.id, { description = md_to_html(md) }, function(ok2, updated)
-      if not ok2 then return end
-      base.item = normalise(updated)
-      base.md = md
-      vim.bo[buf].modified = false
-      vim.notify("[ado] updated description #" .. item.id, vim.log.levels.INFO)
-      -- Reflect the new rev/body in the parent detail buffer if it's still open.
-      local parent = base.parent
-      if parent and detail[parent] and vim.api.nvim_buf_is_valid(parent) then
-        detail[parent].item = base.item
-        render(parent, base.item)
-      end
-    end)
-  end)
-end
-
-function M.edit_description(parent_buf)
-  local entry = detail[parent_buf]
-  if not entry then return end
-  local item = entry.item
-  local name = "ado://" .. item.id .. "/description"
-  local buf = vim.fn.bufnr(name)
-  if buf == -1 or not vim.api.nvim_buf_is_valid(buf) then
-    buf = vim.api.nvim_create_buf(true, false)
-    vim.api.nvim_buf_set_name(buf, name)
-    vim.bo[buf].buftype = "acwrite"
-    vim.bo[buf].swapfile = false
-    vim.bo[buf].filetype = "markdown"
-    vim.api.nvim_create_autocmd("BufWriteCmd", {
-      buffer = buf,
-      callback = function() save_description(buf) end,
-    })
-    vim.api.nvim_create_autocmd("BufWipeout", {
-      buffer = buf,
-      callback = function() desc[buf] = nil end,
-    })
-  end
-  local md = html_to_md(item.description_html)
-  vim.api.nvim_buf_set_lines(buf, 0, -1, false, md)
-  vim.bo[buf].modified = false
-  desc[buf] = {
-    item = item,
-    parent = parent_buf,
-    original_html = item.description_html,
-    md = table.concat(md, "\n"),
-  }
-  vim.api.nvim_set_current_buf(buf)
-end
-
--- ── field actions ─────────────────────────────────────────────────────────────
+-- ── comments & state ──────────────────────────────────────────────────────────
 function M.add_comment(buf)
   local entry = detail[buf]
   if not entry then return end
@@ -302,7 +292,7 @@ function M.add_comment(buf)
   end)
 end
 
--- Pick a valid state for an item (used from both detail buffer and picker).
+-- Pick a valid state for an item (used from the detail buffer and the picker).
 function M.pick_state(item, cb)
   client.states(item.type, function(ok, states)
     if not ok or not states or #states == 0 then
@@ -312,20 +302,6 @@ function M.pick_state(item, cb)
     end
     vim.ui.select(states, { prompt = "State for #" .. item.id }, function(choice)
       if choice then cb(choice) end
-    end)
-  end)
-end
-
-function M.change_state(buf)
-  local entry = detail[buf]
-  if not entry then return end
-  local item = entry.item
-  M.pick_state(item, function(state)
-    client.update(item.id, { state = state }, function(ok, updated)
-      if not ok then return end
-      entry.item = normalise(updated)
-      render(buf, entry.item)
-      vim.notify(string.format("[ado] #%s -> %s", item.id, state), vim.log.levels.INFO)
     end)
   end)
 end
