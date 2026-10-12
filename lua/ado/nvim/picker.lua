@@ -7,18 +7,15 @@ local actions = require("telescope.actions")
 local action_state = require("telescope.actions.state")
 local previewers = require("telescope.previewers")
 
-local client = require("ado.client")
-local config = require("ado.config")
-local wiql = require("ado.wiql")
-local workitem = require("ado.workitem")
+local detail = require("ado.nvim.detail")
+local session = require("ado.nvim.session")
 
 local M = {}
 
 -- id -> markdown description lines, so cursor movement doesn't re-convert.
 local preview_cache = {}
 
-local function entry_maker(raw)
-  local item = workitem.normalise(raw)
+local function entry_maker(item)
   return {
     value = item,
     ordinal = item.id .. " " .. item.title,
@@ -34,7 +31,7 @@ local function make_previewer()
       local item = entry.value
       local md = preview_cache[item.id]
       if not md then
-        md = workitem.html_to_md(item.description_html)
+        md = detail.html_to_md(item.description_html)
         preview_cache[item.id] = md
       end
       if not vim.api.nvim_buf_is_valid(pbuf) then return end
@@ -52,7 +49,9 @@ local function make_previewer()
   })
 end
 
-local function open_picker(title, items)
+-- opts.on_toggle_states: when set, <C-a> closes the picker and calls it.
+local function open_picker(title, items, opts)
+  opts = opts or {}
   pickers.new({}, {
     prompt_title = title,
     finder = finders.new_table({ results = items, entry_maker = entry_maker }),
@@ -62,14 +61,14 @@ local function open_picker(title, items)
       actions.select_default:replace(function()
         local entry = action_state.get_selected_entry()
         actions.close(prompt_bufnr)
-        if entry then workitem.open(entry.value.id) end
+        if entry then detail.open(entry.value.id) end
       end)
       map({ "i", "n" }, "<C-s>", function()
         local entry = action_state.get_selected_entry()
         if not entry then return end
-        workitem.pick_state(entry.value, function(state)
-          client.update(entry.value.id, { state = state }, function(ok)
-            if ok then
+        detail.pick_state(entry.value, function(state)
+          session.get():update(entry.value.id, { state = state }, function(err)
+            if not err then
               vim.notify(string.format("[ado] #%s -> %s", entry.value.id, state), vim.log.levels.INFO)
             end
           end)
@@ -83,32 +82,24 @@ local function open_picker(title, items)
       end)
       map({ "i", "n" }, "<C-o>", function()
         local entry = action_state.get_selected_entry()
-        if entry then workitem.browser_open(entry.value.url) end
+        if entry then detail.browser_open(entry.value.url) end
       end)
+      if opts.on_toggle_states then
+        map({ "i", "n" }, "<C-a>", function()
+          actions.close(prompt_bufnr)
+          opts.on_toggle_states()
+        end)
+      end
       return true
     end,
   }):find()
 end
 
--- az boards query returns a bare array; cap client-side (no --top on the CLI).
-local function to_items(data)
-  local list = data
-  if type(data) == "table" and data.value then list = data.value end
-  local cap = config.get().default_query_top or 200
-  local out = {}
-  for i, raw in ipairs(list) do
-    if i > cap then break end
-    table.insert(out, raw)
-  end
-  return out
-end
-
 function M.my_items()
-  client.ensure_project(function(ok)
+  session.ensure_project(function(ok)
     if not ok then return end
-    client.query(wiql.my_items(), function(ok2, data)
-      if not ok2 then return end
-      local items = to_items(data)
+    session.get():my_items(function(err, items)
+      if err then return end
       if #items == 0 then
         vim.notify("[ado] no open items assigned to you", vim.log.levels.INFO)
         return
@@ -118,21 +109,32 @@ function M.my_items()
   end)
 end
 
-function M.search()
+local function run_search(text, all_states)
+  session.ensure_project(function(ok)
+    if not ok then return end
+    session.get():search(text, { all_states = all_states }, function(err, items)
+      if err then return end
+      local scope = all_states and "all states" or "open"
+      -- With no open match the picker still opens, empty, so <C-a> can widen
+      -- the search to every state.
+      if #items == 0 and all_states then
+        vim.notify("[ado] no matches for '" .. text .. "' in any state", vim.log.levels.INFO)
+        return
+      end
+      open_picker(string.format("Search (%s, <C-a> toggles): %s", scope, text), items, {
+        on_toggle_states = function() run_search(text, not all_states) end,
+      })
+    end)
+  end)
+end
+
+-- Open items only unless opts.all_states (RFC 0002 R1.4); <C-a> re-runs the search in
+-- the other mode.
+function M.search(opts)
+  opts = opts or {}
   vim.ui.input({ prompt = "Search work items: " }, function(text)
     if not text or text == "" then return end
-    client.ensure_project(function(ok)
-      if not ok then return end
-      client.query(wiql.text_search(text), function(ok2, data)
-        if not ok2 then return end
-        local items = to_items(data)
-        if #items == 0 then
-          vim.notify("[ado] no matches for '" .. text .. "'", vim.log.levels.INFO)
-          return
-        end
-        open_picker("Search: " .. text, items)
-      end)
-    end)
+    run_search(text, opts.all_states == true)
   end)
 end
 

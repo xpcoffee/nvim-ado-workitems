@@ -1,0 +1,492 @@
+[
+  {
+    "isDisabled": false,
+    "name": "Bug",
+    "states": [
+      {
+        "category": "Proposed",
+        "name": "New"
+      },
+      {
+        "category": "InProgress",
+        "name": "Active"
+      },
+      {
+        "category": "Resolved",
+        "name": "Resolved"
+      },
+      {
+        "category": "Completed",
+        "name": "Closed"
+      }
+    ]
+  },
+  {
+    "isDisabled": false,
+    "name": "Code Review Request",
+    "states": [
+      {
+        "category": "Proposed",
+        "name": "Requested"
+      },
+      {
+        "category": "Completed",
+        "name": "Closed"
+      }
+    ]
+  },
+  {
+    "isDisabled": false,
+    "name": "Code Review Response",
+    "states": [
+      {
+        "category": "Proposed",
+        "name": "Requested"
+      },
+      {
+        "category": "InProgress",
+        "name": "Accepted"
+      },
+      {
+        "category": "Completed",
+        "name": "Closed"
+      }
+    ]
+  },
+  {
+    "isDisabled": true,
+    "name": "Epic",
+    "states": [
+      {
+        "category": "Proposed",
+        "name": "New"
+      },
+      {
+        "category": "InProgress",
+        "name": "Active"
+      },
+      {
+        "category": "InProgress",
+        "name": "Resolved"
+      },
+      {
+        "category": "Completed",
+        "name": "Closed"
+      },
+      {
+        "category": "Removed",
+        "name": "Removed"
+      }
+    ]
+  },
+  {
+    "isDisabled": false,
+    "name": "Feature",
+    "states": [
+      {
+        "category": "Proposed",
+        "name": "New"
+      },
+      {
+        "category": "InProgress",
+        "name": "Planning"
+      },
+      {
+        "category": "InProgress",
+        "name": "Active"
+      },
+      {
+        "category": "InProgress",
+        "name": "Testing"
+      },
+      {
+        "category": "Completed",
+        "name": "Closed"
+      },
+      {
+        "category": "Removed",
+        "name": "Removed"
+      }
+    ]
+  },
+  {
+    "isDisabled": false,
+    "name": "Feedback Request",
+    "states": [
+      {
+        "category": "InProgress",
+        "name": "Active"
+      },
+      {
+        "category": "Completed",
+        "name": "Closed"
+      },
+      {
+        "category": "Removed",
+        "name": "Removed"
+      }
+    ]
+  },
+  {
+    "isDisabled": false,
+    "name": "Feedback Response",
+    "states": [
+      {
+        "category": "InProgress",
+        "name": "Active"
+      },
+      {
+        "category": "Completed",
+        "name": "Closed"
+      }
+    ]
+  },
+  {
+    "isDisabled": false,
+    "name": "Shared Steps",
+    "states": [
+      {
+        "category": "InProgress",
+        "name": "Active"
+      },
+      {
+        "category": "Completed",
+        "name": "Closed"
+      }
+    ]
+  },
+  {
+    "isDisabled": false,
+    "name": "Task",
+    "states": [
+      {
+        "category": "Proposed",
+        "name": "New"
+      },
+      {
+        "category": "InProgress",
+        "name": "Active"
+      },
+      {
+        "category": "Completed",
+        "name": "Closed"
+      },
+      {
+        "category": "Removed",
+        "name": "Removed"
+      }
+    ]
+  },
+  {
+    "isDisabled": false,
+    "name": "Test Case",
+    "states": [
+      {
+        "category": "Proposed",
+        "name": "Design"
+      },
+      {
+        "category": "InProgress",
+        "name": "Ready"
+      },
+      {
+        "category": "Completed",
+        "name": "Closed"
+      }
+    ]
+  },
+  {
+    "isDisabled": false,
+    "name": "Test Plan",
+    "states": [
+      {
+        "category": "InProgress",
+        "name": "Active"
+      },
+      {
+        "category": "Completed",
+        "name": "Inactive"
+      }
+    ]
+  },
+  {
+    "isDisabled": false,
+    "name": "Test Suite",
+    "states": [
+      {
+        "category": "InProgress",
+        "name": "In Planning"
+      },
+      {
+        "category": "InProgress",
+        "name": "In Progress"
+      },
+      {
+        "category": "Completed",
+        "name": "Completed"
+      }
+    ]
+  },
+  {
+    "isDisabled": false,
+    "name": "User Story",
+    "states": [
+      {
+        "category": "Proposed",
+        "name": "New"
+      },
+      {
+        "category": "InProgress",
+        "name": "Active"
+      },
+      {
+        "category": "InProgress",
+        "name": "Testing"
+      },
+      {
+        "category": "Completed",
+        "name": "Closed"
+      },
+      {
+        "category": "Removed",
+        "name": "Removed"
+      }
+    ]
+  },
+  {
+    "isDisabled": false,
+    "name": "Issue",
+    "states": [
+      {
+        "category": "Proposed",
+        "name": "New"
+      },
+      {
+        "category": "InProgress",
+        "name": "Active"
+      },
+      {
+        "category": "InProgress",
+        "name": "Waiting for External"
+      },
+      {
+        "category": "Resolved",
+        "name": "In Review"
+      },
+      {
+        "category": "Completed",
+        "name": "Closed"
+      },
+      {
+        "category": "Removed",
+        "name": "Discarded"
+      }
+    ]
+  },
+  {
+    "isDisabled": false,
+    "name": "Shared Parameter",
+    "states": [
+      {
+        "category": "InProgress",
+        "name": "Active"
+      },
+      {
+        "category": "Completed",
+        "name": "Inactive"
+      }
+    ]
+  },
+  {
+    "isDisabled": false,
+    "name": "Program",
+    "states": [
+      {
+        "category": "Proposed",
+        "name": "New"
+      },
+      {
+        "category": "InProgress",
+        "name": "Active"
+      },
+      {
+        "category": "Completed",
+        "name": "Closed"
+      }
+    ]
+  },
+  {
+    "isDisabled": false,
+    "name": "Meeting",
+    "states": [
+      {
+        "category": "Proposed",
+        "name": "New"
+      },
+      {
+        "category": "InProgress",
+        "name": "Planning"
+      },
+      {
+        "category": "InProgress",
+        "name": "Active"
+      },
+      {
+        "category": "InProgress",
+        "name": "Follow up"
+      },
+      {
+        "category": "Completed",
+        "name": "Closed"
+      },
+      {
+        "category": "Removed",
+        "name": "Discarded"
+      }
+    ]
+  },
+  {
+    "isDisabled": false,
+    "name": "Milestone",
+    "states": [
+      {
+        "category": "Proposed",
+        "name": "New"
+      },
+      {
+        "category": "InProgress",
+        "name": "Active"
+      },
+      {
+        "category": "Completed",
+        "name": "Closed"
+      },
+      {
+        "category": "Removed",
+        "name": "Removed"
+      }
+    ]
+  },
+  {
+    "isDisabled": false,
+    "name": "Project",
+    "states": [
+      {
+        "category": "Proposed",
+        "name": "New"
+      },
+      {
+        "category": "InProgress",
+        "name": "Exploration"
+      },
+      {
+        "category": "InProgress",
+        "name": "Active"
+      },
+      {
+        "category": "InProgress",
+        "name": "Shipped"
+      },
+      {
+        "category": "Completed",
+        "name": "Closed"
+      },
+      {
+        "category": "Removed",
+        "name": "Removed"
+      }
+    ]
+  },
+  {
+    "isDisabled": true,
+    "name": "Research",
+    "states": [
+      {
+        "category": "Proposed",
+        "name": "New"
+      },
+      {
+        "category": "InProgress",
+        "name": "Active"
+      },
+      {
+        "category": "Completed",
+        "name": "Closed"
+      }
+    ]
+  },
+  {
+    "isDisabled": false,
+    "name": "Change Request",
+    "states": [
+      {
+        "category": "Proposed",
+        "name": "New"
+      },
+      {
+        "category": "Proposed",
+        "name": "On hold"
+      },
+      {
+        "category": "Proposed",
+        "name": "Plan Review"
+      },
+      {
+        "category": "InProgress",
+        "name": "Active"
+      },
+      {
+        "category": "InProgress",
+        "name": "Report Review"
+      },
+      {
+        "category": "Completed",
+        "name": "Completed"
+      },
+      {
+        "category": "Removed",
+        "name": "Discarded"
+      }
+    ]
+  },
+  {
+    "isDisabled": true,
+    "name": "Requirement",
+    "states": [
+      {
+        "category": "Proposed",
+        "name": "New"
+      },
+      {
+        "category": "InProgress",
+        "name": "Active"
+      },
+      {
+        "category": "Completed",
+        "name": "Closed"
+      }
+    ]
+  },
+  {
+    "isDisabled": false,
+    "name": "Incident",
+    "states": [
+      {
+        "category": "Proposed",
+        "name": "New"
+      },
+      {
+        "category": "InProgress",
+        "name": "Active"
+      },
+      {
+        "category": "Completed",
+        "name": "Closed"
+      },
+      {
+        "category": "Removed",
+        "name": "Discarded"
+      }
+    ]
+  }
+]

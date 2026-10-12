@@ -1,10 +1,9 @@
--- Work-item view model + detail buffer. The detail buffer is read-only; pressing
--- <CR> or an insert key on a field opens a floating editor for that one field
--- (float.lua owns the editor lifecycle). State uses a select; the description
--- uses a markdown float. All writes go through do_update + the rev guard.
-local client = require("ado.client")
-local config = require("ado.config")
-local float = require("ado.float")
+-- Detail buffer for one work item. The buffer is read-only; pressing <CR> or an
+-- insert key on a field opens a floating editor for that one field (float.lua
+-- owns the editor lifecycle). State uses a select; the description uses a
+-- markdown float. All writes go through do_update + the session's rev guard.
+local float = require("ado.nvim.float")
+local session = require("ado.nvim.session")
 
 local M = {}
 
@@ -43,36 +42,6 @@ local function from_editable(lines)
 end
 
 -- ── model ───────────────────────────────────────────────────────────────────
-local function normalise(raw)
-  local f = raw.fields or {}
-  local assignee = f["System.AssignedTo"]
-  local display, unique = "", ""
-  if type(assignee) == "table" then
-    display = assignee.displayName or ""
-    unique = assignee.uniqueName or ""
-  end
-  local url = raw._links and raw._links.html and raw._links.html.href
-  return {
-    id = raw.id,
-    rev = raw.rev,
-    type = f["System.WorkItemType"] or "",
-    title = f["System.Title"] or "",
-    state = f["System.State"] or "",
-    assignee_display = display,
-    assignee_unique = unique,
-    tags = f["System.Tags"] or "",
-    iteration = f["System.IterationPath"] or "",
-    area = f["System.AreaPath"] or "",
-    changed = (f["System.ChangedDate"] or ""):sub(1, 10),
-    description_html = f["System.Description"] or "",
-    -- az boards query omits _links, so synthesise the edit URL when absent.
-    url = url or string.format("https://dev.azure.com/%s/_workitems/edit/%s",
-      config.get().org, tostring(raw.id)),
-    raw = raw,
-  }
-end
-M.normalise = normalise
-
 local function render_assignee(item)
   if item.assignee_unique ~= "" then
     return string.format("%s <%s>", item.assignee_display, item.assignee_unique)
@@ -129,27 +98,25 @@ local function render(buf, item)
   vim.bo[buf].modifiable = false
 end
 
--- Single write path: rev-guard, update, re-render. The editor float is already
+-- Single write path: rev check, update, re-render. The editor float is already
 -- closed by the time this runs, so a slow `az` never leaves a window behind.
 local function do_update(buf, fields)
   local entry = detail[buf]
   if not entry then return end
   local item = entry.item
-  client.show(item.id, function(ok, raw)
-    if not ok then return end
-    if raw.rev ~= item.rev then
-      vim.notify(string.format(
-        "[ado] #%s changed remotely (rev %s -> %s); reload (,wr) before saving",
-        item.id, tostring(item.rev), tostring(raw.rev)), vim.log.levels.WARN)
+  session.get():update_if_unchanged(item, fields, function(err, updated)
+    if err then
+      if err.kind == "conflict" then
+        vim.notify(string.format(
+          "[ado] #%s changed remotely (rev %s -> %s); reload (,wr) before saving",
+          item.id, tostring(err.expected_rev), tostring(err.actual_rev)), vim.log.levels.WARN)
+      end
       return
     end
-    client.update(item.id, fields, function(ok2, updated)
-      if not ok2 then return end
-      if not detail[buf] or not vim.api.nvim_buf_is_valid(buf) then return end
-      entry.item = normalise(updated)
-      render(buf, entry.item)
-      vim.notify("[ado] updated #" .. item.id, vim.log.levels.INFO)
-    end)
+    if not detail[buf] or not vim.api.nvim_buf_is_valid(buf) then return end
+    entry.item = updated
+    render(buf, entry.item)
+    vim.notify("[ado] updated #" .. item.id, vim.log.levels.INFO)
   end)
 end
 
@@ -223,9 +190,9 @@ local function dispatch_edit(buf)
 end
 
 local function load(buf, id)
-  client.show(id, function(ok, raw)
-    if not ok then return end
-    detail[buf] = { item = normalise(raw) }
+  session.get():get(id, function(err, item)
+    if err then return end
+    detail[buf] = { item = item }
     render(buf, detail[buf].item)
   end)
 end
@@ -243,6 +210,9 @@ local function set_detail_keymaps(buf)
   k("<leader>we", function() M.edit_field(buf, "description") end, "Edit description")
   k("<leader>wb", function() browser_open(detail[buf] and detail[buf].item.url) end, "Open in browser")
   k("<leader>wr", function() M.reload(buf) end, "Reload work item")
+  k("<leader>wi", function()
+    if detail[buf] then require("ado.nvim.layout").toggle_item(detail[buf].item.id) end
+  end, "Toggle the item view")
 end
 
 function M.open(id)
@@ -284,9 +254,9 @@ function M.add_comment(buf)
   local item = entry.item
   vim.ui.input({ prompt = "Comment on #" .. item.id .. ": " }, function(text)
     if not text or text == "" then return end
-    client.add_comment(item.id, text, function(ok, updated)
-      if not ok then return end
-      entry.item = normalise(updated)
+    session.get():add_comment(item.id, text, function(err, updated)
+      if err then return end
+      entry.item = updated
       vim.notify("[ado] commented on #" .. item.id, vim.log.levels.INFO)
     end)
   end)
@@ -294,14 +264,17 @@ end
 
 -- Pick a valid state for an item (used from the detail buffer and the picker).
 function M.pick_state(item, cb)
-  client.states(item.type, function(ok, states)
-    if not ok or not states or #states == 0 then
-      vim.notify("[ado] could not load states for " .. (item.type ~= "" and item.type or "?"),
-        vim.log.levels.WARN)
-      return
-    end
-    vim.ui.select(states, { prompt = "State for #" .. item.id }, function(choice)
-      if choice then cb(choice) end
+  local function could_not_load()
+    vim.notify("[ado] could not load states for " .. (item.type ~= "" and item.type or "?"),
+      vim.log.levels.WARN)
+  end
+  session.ensure_project(function(ok)
+    if not ok then return could_not_load() end
+    session.get():states(item.type, item.project, function(err, states)
+      if err or not states or #states == 0 then return could_not_load() end
+      vim.ui.select(states, { prompt = "State for #" .. item.id }, function(choice)
+        if choice then cb(choice) end
+      end)
     end)
   end)
 end

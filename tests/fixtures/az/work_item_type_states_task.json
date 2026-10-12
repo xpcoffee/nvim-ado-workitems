@@ -1,0 +1,25 @@
+{
+  "count": 4,
+  "value": [
+    {
+      "category": "Proposed",
+      "color": "b2b2b2",
+      "name": "New"
+    },
+    {
+      "category": "InProgress",
+      "color": "007acc",
+      "name": "Active"
+    },
+    {
+      "category": "Completed",
+      "color": "339933",
+      "name": "Closed"
+    },
+    {
+      "category": "Removed",
+      "color": "ffffff",
+      "name": "Removed"
+    }
+  ]
+}

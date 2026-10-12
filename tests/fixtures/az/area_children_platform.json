@@ -1,0 +1,43 @@
+{
+  "name": "Platform",
+  "path": "\\Example\\Area\\Software\\Platform",
+  "hasChildren": true,
+  "structureType": "area",
+  "children": [
+    {
+      "name": "Backlog",
+      "path": "\\Example\\Area\\Software\\Platform\\Backlog",
+      "hasChildren": false,
+      "structureType": "area",
+      "children": null
+    },
+    {
+      "name": "Team B, North",
+      "path": "\\Example\\Area\\Software\\Platform\\Team B, North",
+      "hasChildren": false,
+      "structureType": "area",
+      "children": null
+    },
+    {
+      "name": "Team C",
+      "path": "\\Example\\Area\\Software\\Platform\\Team C",
+      "hasChildren": false,
+      "structureType": "area",
+      "children": null
+    },
+    {
+      "name": "Team D",
+      "path": "\\Example\\Area\\Software\\Platform\\Team D",
+      "hasChildren": false,
+      "structureType": "area",
+      "children": null
+    },
+    {
+      "name": "Team A",
+      "path": "\\Example\\Area\\Software\\Platform\\Team A",
+      "hasChildren": false,
+      "structureType": "area",
+      "children": null
+    }
+  ]
+}

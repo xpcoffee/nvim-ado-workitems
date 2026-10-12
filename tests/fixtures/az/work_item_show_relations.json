@@ -1,0 +1,50 @@
+{
+  "id": 1003,
+  "rev": 4,
+  "url": "https://dev.azure.com/example-org/00000000-0000-0000-0000-000000000001/_apis/wit/workItems/1003",
+  "multilineFieldsFormat": {
+    "System.Description": "markdown"
+  },
+  "fields": {
+    "System.AreaPath": "Example\\Software\\Platform\\Team A",
+    "System.TeamProject": "Example",
+    "System.WorkItemType": "Task",
+    "System.State": "Closed",
+    "System.Title": "Fixture task",
+    "System.ChangedDate": "2026-01-01T00:00:00.000Z"
+  },
+  "relations": [
+    {
+      "rel": "System.LinkTypes.Hierarchy-Reverse",
+      "url": "https://dev.azure.com/example-org/00000000-0000-0000-0000-000000000001/_apis/wit/workItems/1001",
+      "attributes": {
+        "isLocked": false,
+        "name": "Parent"
+      }
+    },
+    {
+      "rel": "System.LinkTypes.Related",
+      "url": "https://dev.azure.com/example-org/00000000-0000-0000-0000-000000000001/_apis/wit/workItems/1005",
+      "attributes": {
+        "isLocked": false,
+        "name": "Related"
+      }
+    },
+    {
+      "rel": "System.LinkTypes.Related",
+      "url": "https://dev.azure.com/example-org/00000000-0000-0000-0000-000000000001/_apis/wit/workItems/1004",
+      "attributes": {
+        "isLocked": false,
+        "name": "Related"
+      }
+    },
+    {
+      "rel": "AttachedFile",
+      "url": "https://dev.azure.com/example-org/00000000-0000-0000-0000-000000000001/_apis/wit/attachments/00000000-0000-0000-0000-000000000002",
+      "attributes": {
+        "name": "attachment.json",
+        "resourceSize": 1
+      }
+    }
+  ]
+}
