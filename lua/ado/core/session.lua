@@ -3,6 +3,7 @@
 -- methods; every callback is cb(err, result).
 local area_path = require("ado.core.area_path")
 local query = require("ado.core.query")
+local requests = require("ado.core.requests")
 local transport = require("ado.core.transport")
 local types = require("ado.core.types")
 local workitem = require("ado.core.workitem")
@@ -28,8 +29,11 @@ end
 -- opts: transport (required), org, projects ({ { name, types }... }, the
 -- projects lists cover) or, when projects is nil, project (the one project,
 -- nil until chosen), query_top, open_categories (default
--- types.DEFAULT_OPEN_CATEGORIES), on_event (function(event), told
--- { kind = "catalog_loaded", project, types, calls, fallback }).
+-- types.DEFAULT_OPEN_CATEGORIES), default_types (the types of new lines,
+-- { area, children }; core/plan.lua has the default), on_event (function(event), told
+-- { kind = "catalog_loaded", project, types, calls, fallback } and, when the
+-- project's configured types name types its catalog lacks,
+-- { kind = "unknown_types", project, unknown = { name... }, valid = { name... } }).
 function M.new(opts)
   transport.validate(opts.transport)
   local projects = opts.projects or nil
@@ -41,6 +45,7 @@ function M.new(opts)
     project = opts.project,
     query_top = opts.query_top or 200,
     open_categories = opts.open_categories or types.DEFAULT_OPEN_CATEGORIES,
+    default_types = opts.default_types,
     on_event = opts.on_event or function() end,
     -- project name -> { catalog = c } or { waiters = { cb... } } while loading
     catalogs = {},
@@ -132,18 +137,9 @@ function Session:get_with_relations(id, cb)
   end)
 end
 
--- changes: friendly names from workitem.FIELD_REFS, e.g. { state = "Active" }.
--- All changes go in one call.
-function Session:update(id, changes, cb)
-  self.transport.update_fields({ id = id, fields = workitem.to_fields(changes) }, function(err, raw)
-    if err then return cb(err) end
-    cb(nil, self:normalise(raw))
-  end)
-end
-
--- Writes only if ADO still holds the rev `item` was loaded at,
--- so a concurrent edit made elsewhere is not overwritten.
-function Session:update_if_unchanged(item, changes, cb)
+-- cb(nil) when ADO still holds the rev `item` was loaded at, else a
+-- "conflict" error: the revision guard (RFC 0001 R5.14).
+function Session:check_rev(item, cb)
   self.transport.get_work_item({ id = item.id }, function(err, raw)
     if err then return cb(err) end
     if raw.rev ~= item.rev then
@@ -151,8 +147,53 @@ function Session:update_if_unchanged(item, changes, cb)
         string.format("#%s changed remotely (rev %s -> %s)", item.id, tostring(item.rev), tostring(raw.rev)),
         { expected_rev = item.rev, actual_rev = raw.rev }))
     end
-    self:update(item.id, changes, cb)
+    cb(nil)
   end)
+end
+
+-- changes: friendly names from workitem.FIELD_REFS, e.g. { state = "Active" },
+-- sent as one patch that ADO applies only if it still holds the rev `item`
+-- was loaded at, so a concurrent edit made elsewhere is not overwritten.
+-- After a remote change, cb gets a "conflict" error with expected_rev and,
+-- when ADO's message names it, actual_rev.
+function Session:update_if_unchanged(item, changes, cb)
+  local patch = requests.fields_patch(workitem.to_fields(changes), item.rev)
+  self:patch(item.id, patch, function(err, updated)
+    if err and err.kind == "conflict" then
+      -- ADO's message: "Test Operation for path /rev failed, value 2 was
+      -- not equal to test value 1."
+      local actual = tonumber(tostring(err.message):match("value (%d+) was not equal"))
+      return cb(transport.error("conflict", string.format("#%s changed remotely (rev %s -> %s)",
+        item.id, tostring(item.rev), actual and tostring(actual) or "?"),
+        { expected_rev = item.rev, actual_rev = actual }))
+    end
+    cb(err, updated)
+  end)
+end
+
+-- Sends a JSON Patch (core/requests.lua) to item `id` as one write.
+function Session:patch(id, patch, cb)
+  self.transport.patch_work_item({ id = id, patch = patch }, function(err, raw)
+    if err then return cb(err) end
+    cb(nil, self:normalise(raw))
+  end)
+end
+
+-- fields = { type, title, area (field form), tags, assignee (a unique
+-- name) | nil, parent | nil }, sent as one write; the project is the
+-- area's. ADO gives the item its type's initial state.
+function Session:create(fields, cb)
+  self.transport.create_work_item({ project = area_path.project(fields.area), type = fields.type,
+    patch = requests.create_patch(fields, self.org) }, function(err, raw)
+    if err then return cb(err) end
+    cb(nil, self:normalise(raw))
+  end)
+end
+
+-- The identities whose name or email starts with text:
+-- { { display_name, unique_name, mail, id }... }.
+function Session:resolve_identity(text, cb)
+  self.transport.resolve_identity({ text = text }, cb)
 end
 
 function Session:add_comment(id, text, cb)
@@ -160,6 +201,19 @@ function Session:add_comment(id, text, cb)
     if err then return cb(err) end
     cb(nil, self:normalise(raw))
   end)
+end
+
+-- The configured types of project that its catalog does not have.
+local function unknown_types(projects, project, catalog)
+  local out = {}
+  for _, p in ipairs(projects) do
+    if p.name == project then
+      for _, name in ipairs(p.types or {}) do
+        if not catalog:states(name) then table.insert(out, name) end
+      end
+    end
+  end
+  return out
 end
 
 -- The type catalog of one project, loaded on first use and kept for the
@@ -186,6 +240,12 @@ function Session:catalog(project, cb)
       self.catalogs[project] = { catalog = catalog }
       self.on_event({ kind = "catalog_loaded", project = project, types = #catalog.types,
         calls = info.calls, fallback = info.fallback })
+      -- Warned here rather than at setup(), because only the catalog knows
+      -- the project's types; a cached catalog loads once, so this warns once.
+      local unknown = unknown_types(self:project_list(), project, catalog)
+      if #unknown > 0 then
+        self.on_event({ kind = "unknown_types", project = project, unknown = unknown, valid = catalog:names() })
+      end
     end
     for _, w in ipairs(waiters) do w(err, catalog) end
   end)

@@ -18,20 +18,28 @@ M.OPERATIONS = {
   "list_projects",         -- {}                       -> { name... }
   "query",                 -- { wiql, spec, project }  -> { raw item... }
   "get_work_item",         -- { id, relations }        -> raw item; relations = true asks for its links
-  "update_fields",         -- { id, fields = { [ref] = value } } -> raw item
   "add_comment",           -- { id, text }             -> raw item
   "work_item_types",       -- { project }              -> { { name, isDisabled, states = { { name, category }... } }... }
   "work_item_type_states", -- { type, project }        -> { { name, category }... }
   -- path is the classification node form, \Project\Area\Team (core/area_path.lua)
   "area_children",         -- { project, path }        -> { { name, path, hasChildren }... }, one level
+  -- patch is a JSON Patch document (application/json-patch+json) that ADO
+  -- applies whole or not at all: { { op, path, value }... }, with op "test"
+  -- on /rev, "add" or "replace" on /fields/<ref>, "add" on /relations/-
+  -- with value { rel, url }, and "remove" on /relations/<index>. A failed
+  -- test op is a "conflict" error and writes nothing.
+  "patch_work_item",       -- { id, patch }            -> raw item
+  -- patch as for patch_work_item, without test or remove ops
+  "create_work_item",      -- { project, type, patch } -> raw item with its new id
+  -- identities whose name or email starts with text, as ADO's people picker
+  -- finds them; a read
+  "resolve_identity",      -- { text }                 -> { { display_name, unique_name, mail, id }... }
 }
 
 -- Operations that change ADO, including those later phases add.
 M.WRITES = {
-  update_fields = true,
   add_comment = true,
-  add_link = true,
-  remove_link = true,
+  patch_work_item = true,
   create_work_item = true,
 }
 

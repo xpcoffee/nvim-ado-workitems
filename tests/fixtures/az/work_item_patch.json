@@ -1,0 +1,13 @@
+{
+  "id": 1002,
+  "rev": 3,
+  "url": "https://dev.azure.com/example-org/00000000-0000-0000-0000-000000000001/_apis/wit/workItems/1002",
+  "fields": {
+    "System.WorkItemType": "Task",
+    "System.Title": "Fixture task",
+    "System.TeamProject": "Example",
+    "System.AreaPath": "Example\\Software\\Platform\\Team A",
+    "System.State": "Closed"
+  },
+  "relations": null
+}

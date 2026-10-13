@@ -1,6 +1,7 @@
 -- The area view buffer (RFC 0001 R2): one buffer per location, named by its
--- URI, read-only in this phase. Navigation replaces the buffer in the area
--- window; nvim/layout.lua picks the window and records the history (R4.1).
+-- URI. Its title and state columns are edited in place and saved with :w
+-- (nvim/save.lua). Navigation replaces the buffer in the area window;
+-- nvim/layout.lua picks the window and records the history (R4.1).
 local area_path = require("ado.core.area_path")
 local core = require("ado.core.area_view")
 local keymaps = require("ado.nvim.keymaps")
@@ -14,7 +15,8 @@ local view_buffer = require("ado.nvim.view_buffer")
 
 local M = {}
 
--- buf -> { location, view (core view, nil until loaded), ids = { row id per line } }
+-- buf -> { location, view (core view, nil until loaded), ids = { row id per
+-- line }, loading = bool }
 local state = {}
 
 local function notify(msg, level)
@@ -39,33 +41,44 @@ local function render(buf, view)
   for i, row in ipairs(view.rows) do
     ids[i] = registry.add({ kind = row.kind, view = name, row = row })
   end
-  local text, prefixes = lines.render(view.rows, ids)
-  if #text == 0 then text, prefixes = { "" }, {} end
+  local text = lines.render(view.rows, ids)
+  if #text == 0 then text = { "" } end
   entry.view, entry.ids = view, ids
-  view_buffer.set_lines(buf, text, prefixes)
+  view_buffer.set_lines(buf, text)
   view_buffer.set_winbar(buf, winbar(entry.location, view))
 end
 
-function M.load(buf)
+-- opts.quiet leaves the command line alone, for a caller that reports the
+-- load itself; opts.on_done(err) runs once the load ends, also when the
+-- buffer went away or a newer load replaced it.
+function M.load(buf, opts)
+  opts = opts or {}
+  local echo = opts.quiet and function() end or progress.echo
+  local done_cb = opts.on_done or function() end
   local entry = state[buf]
-  if not entry then return end
+  if not entry then return done_cb(nil) end
   local loc = entry.location
   local label = area_path.name(loc.path)
+  entry.loading = true
+  view_buffer.set_editable(buf, false)
   view_buffer.set_winbar(buf, winbar(loc) .. "  ·  loading")
   core.load(session.get(), loc, {
     on_progress = function(done, total, what)
-      progress.echo(string.format("loading %s: %s (%d/%d)", label, what, done, total))
+      echo(string.format("loading %s: %s (%d/%d)", label, what, done, total))
     end,
   }, function(err, view)
-    if not vim.api.nvim_buf_is_valid(buf) or state[buf] ~= entry then return end
+    entry.loading = false
+    if not vim.api.nvim_buf_is_valid(buf) or state[buf] ~= entry then return done_cb(nil) end
+    view_buffer.set_editable(buf, true)
     if err then
       -- Transport errors are already reported by nvim/session.lua.
       view_buffer.set_winbar(buf, winbar(loc) .. "  ·  load failed, <leader>wr retries")
-      return
+      return done_cb(err)
     end
     render(buf, view)
-    progress.echo(string.format("%s: %d sub-areas, %d items%s", label, #view.areas, #view.items,
+    echo(string.format("%s: %d sub-areas, %d items%s", label, #view.areas, #view.items,
       view.truncated and " (truncated)" or ""))
+    done_cb(nil)
   end)
 end
 
@@ -111,8 +124,9 @@ function actions.toggle_sub()
 end
 
 function actions.reload()
-  local buf = current()
-  M.load(buf)
+  local buf, entry = current()
+  if not entry or entry.loading then return end
+  view_buffer.confirm_discard(buf, function() M.load(buf) end)
 end
 
 local function split_list(text)
@@ -201,11 +215,24 @@ function M.show(loc)
         state[buf] = nil
       end,
     })
-    view_buffer.set_lines(buf, { "" }, {})
+    view_buffer.set_lines(buf, { "" })
   end
   view_buffer.show(vim.api.nvim_get_current_win(), buf)
   if created then M.load(buf) end
   return buf
+end
+
+-- The view record for the change plan, or nil until the view has loaded.
+function M.record(buf)
+  local entry = state[buf]
+  if not entry or not entry.view then return nil end
+  return view_buffer.record(buf, "area", entry.location.filters.state, entry.ids,
+    { rel = entry.location.path, filters = entry.location.filters })
+end
+
+function M.busy(buf)
+  local entry = state[buf]
+  return entry ~= nil and entry.loading == true
 end
 
 function M.state(buf)

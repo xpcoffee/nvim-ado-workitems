@@ -16,13 +16,18 @@ function M.fresh(opts)
   vim.cmd("silent! only")
   vim.cmd("silent! %bwipeout!")
   local fake = Fake.new(opts.seed or seed)
-  local c = { transport = fake, org = "test-org", project = "P", projects = false, write_guard = false,
+  local types = {}
+  for _, t in ipairs((opts.seed or seed).types) do table.insert(types, t.name) end
+  local c = { transport = fake, org = "test-org", project = "P", projects = { { name = "P", types = types } },
+    write_guard = false,
     area_paths = { "P/Team" }, area_filters = { state = "open" },
     link_types = { "System.LinkTypes.Hierarchy", "System.LinkTypes.Related" } }
   for k, v in pairs(opts) do if k ~= "seed" then c[k] = v end end
   require("ado.config").setup(c)
   require("ado.nvim.session").reset()
-  for _, m in ipairs({ "ado.nvim.area_view", "ado.nvim.item_view", "ado.nvim.layout" }) do package.loaded[m] = nil end
+  for _, m in ipairs({ "ado.nvim.area_view", "ado.nvim.item_view", "ado.nvim.layout", "ado.nvim.save" }) do
+    package.loaded[m] = nil
+  end
   vim.fn.executable = function(name)
     if name == "pandoc" then return 0 end
     return executable(name)
@@ -35,6 +40,17 @@ function M.fresh(opts)
   env.item_view = require("ado.nvim.item_view")
   env.layout = require("ado.nvim.layout")
   return env
+end
+
+-- Stands in for vim.notify as Neovim defines it, which adds each message
+-- to :messages, for specs that count what a user would find there.
+function M.history_notify(msg, level)
+  vim.api.nvim_echo({ { msg, (level or 0) >= vim.log.levels.WARN and "WarningMsg" or nil } }, true, {})
+end
+
+-- The real progress.echo, which fresh() replaces with a recorder.
+function M.real_echo()
+  return loadfile(vim.api.nvim_get_runtime_file("lua/ado/nvim/progress.lua", false)[1])().echo
 end
 
 function M.key(keys)

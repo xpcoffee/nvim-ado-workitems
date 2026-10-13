@@ -11,22 +11,23 @@ end
 test("calls are recorded in order and writes separately", function()
   local fake = Fake.new(seed)
   fake.get_work_item({ id = 101 }, function() end)
-  fake.update_fields({ id = 101, fields = { ["System.Title"] = "New" } }, function() end)
+  fake.patch_work_item({ id = 101, patch = { { op = "add", path = "/fields/System.Title", value = "New" } } }, function() end)
   fake.list_projects({}, function() end)
   eq(#fake.calls, 3)
   eq(fake.calls[1].op, "get_work_item")
-  eq(fake.calls[2], { op = "update_fields", params = { id = 101, fields = { ["System.Title"] = "New" } } })
+  eq(fake.calls[2], { op = "patch_work_item", params = { id = 101, patch = { { op = "add", path = "/fields/System.Title", value = "New" } } } })
   eq(#fake.writes, 1)
-  eq(fake.writes[1].op, "update_fields")
+  eq(fake.writes[1].op, "patch_work_item")
 end)
 
 test("a write bumps rev and returns the updated raw item", function()
   local fake = Fake.new(seed)
   local result
-  fake.update_fields({ id = 103, fields = { ["System.State"] = "Doing" } }, function(err, raw)
-    eq(err, nil)
-    result = raw
-  end)
+  fake.patch_work_item({ id = 103, patch = { { op = "add", path = "/fields/System.State", value = "Doing" } } },
+    function(err, raw)
+      eq(err, nil)
+      result = raw
+    end)
   eq(result.rev, 2)
   eq(result.fields["System.State"], "Doing")
 end)
@@ -44,8 +45,8 @@ end)
 
 test("a failed write is recorded but not applied", function()
   local fake = Fake.new(seed)
-  fake:fail_on("update_fields", 1)
-  fake.update_fields({ id = 101, fields = { ["System.Title"] = "X" } }, function(err)
+  fake:fail_on("patch_work_item", 1)
+  fake.patch_work_item({ id = 101, patch = { { op = "add", path = "/fields/System.Title", value = "X" } } }, function(err)
     eq(err.kind, "failed")
   end)
   eq(fake.items[101].fields["System.Title"], "Write API")
@@ -129,4 +130,82 @@ test("work_item_types lists every type with state categories, or without on requ
   end)
   fake.types_omit_categories = true
   fake.work_item_types({ project = "P" }, function(_, list) eq(list[1].states[1], { name = "To Do" }) end)
+end)
+
+local function patched(fake, id, patch)
+  local err, raw
+  fake.patch_work_item({ id = id, patch = patch }, function(e, r) err, raw = e, r end)
+  return err, raw
+end
+
+local function api_url(id)
+  return "https://dev.azure.com/test-org/_apis/wit/workItems/" .. id
+end
+
+test("a patch applies its ops in order as one revision, and a link alone leaves the rev", function()
+  local fake = Fake.new(require("tests.fixtures.seed"))
+  local err, raw = patched(fake, 103, { { op = "test", path = "/rev", value = 1 },
+    { op = "add", path = "/fields/System.Title", value = "Fix the login" },
+    { op = "add", path = "/fields/System.State", value = "Doing" },
+    { op = "add", path = "/relations/-", value = { rel = "System.LinkTypes.Hierarchy-Reverse", url = api_url(100) } } })
+  eq(err, nil)
+  eq(raw.rev, 2)
+  eq(fake.items[103].fields["System.Parent"], 100)
+  eq(fake.items[100].relations[#fake.items[100].relations].url, api_url(103), "the parent gets the child end")
+  eq(fake.items[100].rev, 1)
+  err, raw = patched(fake, 103, { { op = "test", path = "/rev", value = 2 },
+    { op = "remove", path = "/relations/0" } })
+  eq(err, nil)
+  eq(raw.rev, 2)
+  eq(fake.items[103].fields["System.Parent"], nil)
+end)
+
+test("a failed test op is a conflict, and nothing in the patch is written", function()
+  local fake = Fake.new(require("tests.fixtures.seed"))
+  local err = patched(fake, 101, { { op = "add", path = "/fields/System.Title", value = "x" },
+    { op = "remove", path = "/relations/0" }, { op = "test", path = "/rev", value = 7 } })
+  eq(err, { kind = "conflict",
+    message = "VS403351: Test Operation for path /rev failed, value 1 was not equal to test value 7." })
+  eq(fake.items[101].fields["System.Title"], "Write API")
+  eq(fake.items[101].fields["System.Parent"], 100)
+  eq(#fake.writes, 1)
+  ok(fake.writes[1].failed)
+end)
+
+test("a later op that fails undoes the earlier ones, on both ends of a link", function()
+  local fake = Fake.new(require("tests.fixtures.seed"))
+  local before = #fake.items[105].relations
+  local err = patched(fake, 103, {
+    { op = "add", path = "/relations/-", value = { rel = "System.LinkTypes.Related", url = api_url(105) } },
+    { op = "add", path = "/fields/System.State", value = "Bogus" } })
+  ok(err.message:find("'Bogus' that is not in the list", 1, true), err.message)
+  eq(#fake.items[105].relations, before)
+  eq(fake.items[103].fields["System.State"], "To Do")
+end)
+
+test("add on System.Tags merges into the tags, as ADO does; replace replaces", function()
+  local fake = Fake.new(require("tests.fixtures.seed"))
+  patched(fake, 101, { { op = "add", path = "/fields/System.Tags", value = "urgent" } })
+  eq(fake.items[101].fields["System.Tags"], "api; backend; urgent")
+  patched(fake, 101, { { op = "replace", path = "/fields/System.Tags", value = "urgent" } })
+  eq(fake.items[101].fields["System.Tags"], "urgent")
+end)
+
+test("a create applies its fields and parent in one call; a failing one creates nothing", function()
+  local fake = Fake.new(require("tests.fixtures.seed"))
+  local err, raw
+  fake.create_work_item({ project = "P", type = "Task", patch = {
+    { op = "add", path = "/fields/System.Title", value = "New" },
+    { op = "add", path = "/fields/System.AreaPath", value = "P\\Team\\A" },
+    { op = "add", path = "/relations/-", value = { rel = "System.LinkTypes.Hierarchy-Reverse", url = api_url(100) } },
+  } }, function(e, r) err, raw = e, r end)
+  eq(err, nil)
+  eq({ raw.id, raw.rev, raw.fields["System.State"], fake.items[1000].fields["System.Parent"] }, { 1000, 1, "To Do", 100 })
+  fake.create_work_item({ project = "P", type = "Task", patch = {
+    { op = "add", path = "/fields/System.Title", value = "Orphan" },
+    { op = "add", path = "/relations/-", value = { rel = "System.LinkTypes.Hierarchy-Reverse", url = api_url(999) } },
+  } }, function(e) err = e end)
+  eq(err.kind, "not_found")
+  eq(fake.items[1001], nil)
+  eq(fake.next_id, 1001)
 end)

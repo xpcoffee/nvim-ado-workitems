@@ -87,7 +87,7 @@ test("R3.1 the rows are the item, its parent, its area, its children, then each 
   local rows = item_view.rows(item_view.display(view))
   eq(shape(rows), { "self:20", "parent:10", "area", "children", "child:21", "child:23", "link", "link:30" })
   eq(rows[1], { kind = "item", slot = "self", depth = 0, id = 20, rev = 1, type = "User Story", state = "Active",
-    assignee = "", tags = "", title = "N" })
+    assignee = "", assignee_unique = "", tags = "", title = "N", project = "P", area = "P\\Team\\A", parent = 10 })
   eq(rows[3], { kind = "area", slot = "area", path = "P\\Team\\A", name = "P\\Team\\A" })
   eq(rows[4].label, "Children: 2 open of 3")
   eq(rows[7], { kind = "heading", slot = "link", rel = "System.LinkTypes.Related",
@@ -155,8 +155,8 @@ test("a load costs get_work_item with relations and one query, plus the catalog 
   eq(ops(fake), { "get_work_item", "query", "work_item_types", "get_work_item", "query" })
   eq(fake.calls[1].params, { id = 20, relations = true })
   eq(fake.calls[2].params.wiql, "SELECT [System.Id], [System.Title], [System.State], [System.WorkItemType],"
-    .. " [System.AssignedTo], [System.Tags], [System.AreaPath], [System.TeamProject], [System.ChangedDate]"
-    .. " FROM WorkItems WHERE [System.Id] IN (10, 21, 22, 23, 31, 30, 999) ORDER BY [System.Id]")
+    .. " [System.AssignedTo], [System.Tags], [System.AreaPath], [System.TeamProject], [System.ChangedDate],"
+    .. " [System.Parent] FROM WorkItems WHERE [System.Id] IN (10, 21, 22, 23, 31, 30, 999) ORDER BY [System.Id]")
 end)
 
 test("an item with no links costs no query", function()

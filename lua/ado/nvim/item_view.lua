@@ -1,6 +1,7 @@
 -- The item view buffer (RFC 0001 R3): one buffer per work item, named
--- ado://item/<id>, read-only in this phase. It shows in the item panel that
--- nvim/layout.lua keeps between the area view and the detail split.
+-- ado://item/<id>. Titles and states are edited in place and saved with :w
+-- (nvim/save.lua). It shows in the item panel that nvim/layout.lua keeps
+-- between the area view and the detail split.
 local config = require("ado.config")
 local core = require("ado.core.item_view")
 local keymaps = require("ado.nvim.keymaps")
@@ -46,9 +47,9 @@ local function render(buf)
   registry.release(entry.ids)
   local rows = core.rows(entry.display)
   local ids = add_ids(vim.api.nvim_buf_get_name(buf), rows)
-  local text, prefixes, widths = lines.render(rows, ids)
+  local text, _, widths = lines.render(rows, ids)
   entry.ids, entry.widths = ids, widths
-  view_buffer.set_lines(buf, text, prefixes)
+  view_buffer.set_lines(buf, text)
   local labels = {}
   for i, row in ipairs(rows) do
     if row.kind == "item" and LABELS[row.slot] then labels[i - 1] = LABELS[row.slot] end
@@ -57,24 +58,32 @@ local function render(buf)
   view_buffer.set_winbar(buf, winbar(entry))
 end
 
-function M.load(buf)
+-- opts.quiet leaves the command line alone, for a caller that reports the
+-- load itself; opts.on_done(err) runs once the load ends, also when the
+-- buffer went away or a newer load replaced it.
+function M.load(buf, opts)
+  opts = opts or {}
+  local echo = opts.quiet and function() end or progress.echo
+  local done_cb = opts.on_done or function() end
   local entry = state[buf]
-  if not entry then return end
+  if not entry then return done_cb(nil) end
   local id = entry.location.id
   entry.loading = true
+  view_buffer.set_editable(buf, false)
   view_buffer.set_winbar(buf, winbar(entry, "  ·  loading"))
   core.load(session.get(), entry.location, {
     link_types = config.get().link_types,
     on_progress = function(done, total, what)
-      progress.echo(string.format("loading #%d: %s (%d/%d)", id, what, done, total))
+      echo(string.format("loading #%d: %s (%d/%d)", id, what, done, total))
     end,
   }, function(err, view)
     entry.loading = false
-    if not vim.api.nvim_buf_is_valid(buf) or state[buf] ~= entry then return end
+    if not vim.api.nvim_buf_is_valid(buf) or state[buf] ~= entry then return done_cb(nil) end
+    view_buffer.set_editable(buf, true)
     if err then
       -- Transport errors are already reported by nvim/session.lua.
       view_buffer.set_winbar(buf, winbar(entry, "  ·  load failed, <leader>wr retries"))
-      return
+      return done_cb(err)
     end
     entry.view = view
     entry.display = core.display(view, entry.location)
@@ -82,7 +91,8 @@ function M.load(buf)
     render(buf)
     local linked = 0
     for _, s in ipairs(view.sections) do linked = linked + #s.items end
-    progress.echo(string.format("#%d: %d children, %d linked", id, #view.children.items, linked))
+    echo(string.format("#%d: %d children, %d linked", id, #view.children.items, linked))
+    done_cb(nil)
   end)
 end
 
@@ -150,14 +160,23 @@ function actions.detail()
   if id then layout.show_detail(id) end
 end
 
+local function refuse_if_modified(buf, what)
+  if not vim.bo[buf].modified then return false end
+  notify("this view has unsaved edits; save them (:w) or reload (<leader>wr) before " .. what,
+    vim.log.levels.WARN)
+  return true
+end
+
 -- <Tab> on a child row: collapse it when expanded, else fetch and insert
--- its children (R3.4). Lines are inserted and deleted rather than redrawn,
--- so later phases can keep unsaved edits through an expansion.
+-- its children (R3.4). Refused while the view has unsaved edits: the
+-- cursor line may no longer be where the row was loaded, and a collapse
+-- would delete lines that may hold edits.
 function actions.expand()
   local reg, line, buf, entry = row_under_cursor()
   if not reg then return end
   local row = reg.row
   if not core.expandable(row) then return notify("only child rows expand") end
+  if refuse_if_modified(buf, "expanding or collapsing rows") then return end
   local display = entry.display
   if display.expanded[row.id] then
     local last = block_end(entry, line, row.depth)
@@ -172,15 +191,17 @@ function actions.expand()
   entry.expanding[row.id] = true
   local row_id = entry.ids[line]
   progress.echo(string.format("expanding #%d", row.id))
+  view_buffer.set_editable(buf, false)
   core.expand(session.get(), display, row, function(err, rows, info)
     entry.expanding[row.id] = nil
+    if next(entry.expanding) == nil then view_buffer.set_editable(buf, true) end
     if err or not vim.api.nvim_buf_is_valid(buf) or state[buf] ~= entry or entry.display ~= display then return end
     local at = line_of(entry, row_id)
     if not at then return end
     local ids = add_ids(vim.api.nvim_buf_get_name(buf), rows)
-    local text, prefixes, widths = lines.render(rows, ids, entry.widths)
+    local text, _, widths = lines.render(rows, ids, entry.widths)
     entry.widths = widths
-    view_buffer.insert_lines(buf, at, text, prefixes)
+    view_buffer.insert_lines(buf, at, text)
     for i, id in ipairs(ids) do table.insert(entry.ids, at + i, id) end
     if #rows == 0 then
       progress.echo(info.total == 0 and string.format("#%d has no children", row.id)
@@ -194,8 +215,9 @@ end
 -- Shows children and links in every state, or open only again (R3.8). The
 -- rows are already loaded, so this makes no call and keeps expansions.
 function actions.toggle_all()
-  local _, entry = current()
+  local buf, entry = current()
   if not entry or not entry.display then return end
+  if refuse_if_modified(buf, "showing other states") then return end
   layout.go(location.with_all(entry.location, not entry.location.all), { keep_expansion = true })
 end
 
@@ -208,7 +230,8 @@ end
 
 function actions.reload()
   local buf, entry = current()
-  if entry and not entry.loading then M.load(buf) end
+  if not entry or entry.loading then return end
+  view_buffer.confirm_discard(buf, function() M.load(buf) end)
 end
 
 M.actions = actions
@@ -221,7 +244,8 @@ end
 -- Shows loc in the current window. The first showing of an item loads it;
 -- later ones show the loaded rows again, collapsed (going back shows a
 -- location collapsed), except opts.keep_expansion for the all-states
--- toggle. Called by layout.go.
+-- toggle. A view with unsaved edits is shown as it is, so going back to it
+-- keeps the edits. Called by layout.go.
 function M.show(loc, opts)
   opts = opts or {}
   local buf, created = view_buffer.get_or_create(location.buffer_name(loc), "adoitemview")
@@ -235,10 +259,11 @@ function M.show(loc, opts)
         state[buf] = nil
       end,
     })
-    view_buffer.set_lines(buf, { "" }, {})
+    view_buffer.set_lines(buf, { "" })
   end
   view_buffer.show(vim.api.nvim_get_current_win(), buf)
   local entry = state[buf]
+  if vim.bo[buf].modified then return buf end
   entry.location = loc
   if entry.view then
     if opts.keep_expansion and entry.display then
@@ -251,6 +276,19 @@ function M.show(loc, opts)
     M.load(buf)
   end
   return buf
+end
+
+-- The view record for the change plan, or nil until the view has loaded.
+function M.record(buf)
+  local entry = state[buf]
+  if not entry or not entry.display then return nil end
+  return view_buffer.record(buf, "item", entry.display.location.all and "all" or "open", entry.ids,
+    core.plan_fields(entry.view))
+end
+
+function M.busy(buf)
+  local entry = state[buf]
+  return entry ~= nil and (entry.loading == true or next(entry.expanding or {}) ~= nil)
 end
 
 function M.state(buf)

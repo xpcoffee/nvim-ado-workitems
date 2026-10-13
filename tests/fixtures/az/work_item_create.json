@@ -1,0 +1,16 @@
+{
+  "id": 1001,
+  "rev": 1,
+  "url": "https://dev.azure.com/example-org/00000000-0000-0000-0000-000000000001/_apis/wit/workItems/1001",
+  "multilineFieldsFormat": {},
+  "fields": {
+    "System.AreaPath": "Example\\Software\\Platform\\Team A",
+    "System.TeamProject": "Example",
+    "System.WorkItemType": "User Story",
+    "System.State": "New",
+    "System.Title": "Fixture story",
+    "System.Tags": "nvim-ado-test",
+    "System.ChangedDate": "2026-01-01T00:00:00.000Z"
+  },
+  "relations": null
+}

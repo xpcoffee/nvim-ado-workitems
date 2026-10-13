@@ -4,6 +4,7 @@
 -- freely. Org (and project where required) are threaded per call; we never
 -- mutate the user's global `az devops configure` defaults.
 local transport = require("ado.core.transport")
+local urls = require("ado.core.urls")
 
 local M = {}
 
@@ -17,15 +18,16 @@ local function stderr_error(stderr)
   return transport.error("failed", (stderr ~= nil and stderr ~= "") and stderr or "az command failed")
 end
 
--- Each update field has a dedicated flag except System.Tags, which goes
--- through --fields. A list, not a map, so the argv order is fixed.
-local UPDATE_FLAGS = {
-  { "System.Title", "--title" },
-  { "System.State", "--state" },
-  { "System.AssignedTo", "--assigned-to" },
-  { "System.IterationPath", "--iteration" },
-  { "System.Description", "--description" },
-}
+-- A patch whose test op fails gets HTTP 412 with this type and writes
+-- nothing (checked 2026-10-12); the test ops check /rev and the relations
+-- a patch removes. The result is ADO's message, for example "VS403351:
+-- Test Operation for path /rev failed, value 2 was not equal to test value
+-- 1.", or nil for any other failure.
+local function test_failure(stderr)
+  local s = tostring(stderr)
+  if not s:find("TestPatchOperationFailedException", 1, true) then return nil end
+  return s:match('"message":"(.-)","') or s
+end
 
 -- ADO documents a 32,000 character WIQL limit. The open-state condition grows
 -- with the number of types and states, so warn well before the limit.
@@ -39,6 +41,14 @@ local WIQL_WARN_LENGTH = 16000
 local TYPES_API_VERSION = "7.1"
 local TYPE_STATES_API_VERSION = "6.0"
 
+-- The Azure DevOps application's resource ID, which az rest needs to fetch
+-- a token for a URL it does not recognise.
+local ADO_RESOURCE = "499b84ac-1321-427f-aa17-267ca6975798"
+local IDENTITY_API_VERSION = "7.1-preview.1"
+local WORK_ITEMS_API_VERSION = "7.1"
+-- Resolving needs only "none", "one" or "several", so a few results do.
+local IDENTITY_MAX = 10
+
 local TYPES_PROJECTION = "value[].{name: name, isDisabled: isDisabled, "
   .. "states: states[].{name: name, category: category}}"
 
@@ -49,7 +59,8 @@ local TYPES_PROJECTION = "value[].{name: name, isDisabled: isDisabled, "
 function M.new(opts)
   local system = opts.system or vim.system
   local executable = opts.executable or function() return vim.fn.executable("az") == 1 end
-  local org_args = { "--org", "https://dev.azure.com/" .. opts.org }
+  local base_url = "https://dev.azure.com/" .. opts.org
+  local org_args = { "--org", base_url }
 
   local function finish(cb, err, result)
     vim.schedule(function()
@@ -59,14 +70,11 @@ function M.new(opts)
 
   -- args: full argv starting with "az"; --org goes after it, then tail.
   -- empty: the result when az prints nothing.
-  local function run(args, cb, tail, empty)
+  local function exec(argv, cb, empty)
     if not executable() then
       finish(cb, transport.error("failed", "az CLI not found"))
       return
     end
-    local argv = vim.list_extend({}, args)
-    vim.list_extend(argv, org_args)
-    vim.list_extend(argv, tail or {})
     system(argv, { text = true }, function(res)
       if res.code ~= 0 then
         finish(cb, stderr_error(res.stderr))
@@ -83,6 +91,13 @@ function M.new(opts)
       end
       finish(cb, nil, decoded)
     end)
+  end
+
+  local function run(args, cb, tail, empty)
+    local argv = vim.list_extend({}, args)
+    vim.list_extend(argv, org_args)
+    vim.list_extend(argv, tail or {})
+    exec(argv, cb, empty)
   end
 
   local t = {}
@@ -112,7 +127,7 @@ function M.new(opts)
     end, params.project and { "--project", params.project } or nil, {})
   end
 
-  -- Work items are org-unique, so show/update need no project. show's
+  -- Work items are org-unique, so show and the patch route need no project. show's
   -- default --expand is "all", which also carries relations; "relations"
   -- drops computed fields such as System.AreaLevel1 that no caller reads.
   function t.get_work_item(params, cb)
@@ -122,30 +137,36 @@ function M.new(opts)
     run(args, cb)
   end
 
-  function t.update_fields(params, cb)
-    local args = { "az", "boards", "work-item", "update", "--id", tostring(params.id), "--output", "json" }
-    local remaining = {}
-    for ref, value in pairs(params.fields) do remaining[ref] = value end
-    for _, pair in ipairs(UPDATE_FLAGS) do
-      local value = remaining[pair[1]]
-      if value then
-        vim.list_extend(args, { pair[2], value })
-        remaining[pair[1]] = nil
-      end
-    end
-    if remaining["System.Tags"] then
-      -- --fields takes space-separated field=value pairs; the value itself holds
-      -- semicolons, so it must arrive as one argv element.
-      vim.list_extend(args, { "--fields", "System.Tags=" .. remaining["System.Tags"] })
-      remaining["System.Tags"] = nil
-    end
-    local unsupported = vim.tbl_keys(remaining)
-    if #unsupported > 0 then
-      table.sort(unsupported)
-      finish(cb, transport.error("invalid", "az transport cannot update " .. table.concat(unsupported, ", ")))
+  -- Writes go through az rest, which calls ADO's REST API directly with an
+  -- ADO token and takes the organisation in the URL. az boards work-item
+  -- update cannot send a patch with a test op, and merges tags rather than
+  -- replacing them; az devops invoke routes the workitems resource to the
+  -- create URL (both checked 2026-10-12).
+  local function rest_patch(method, url, patch, cb)
+    exec({ "az", "rest", "--method", method, "--url", url, "--resource", ADO_RESOURCE,
+      "--headers", "Content-Type=application/json-patch+json", "--body", vim.json.encode(patch),
+      "--output", "json" }, cb)
+  end
+
+  local function item_url(id)
+    return string.format("%s/_apis/wit/workitems/%d?api-version=%s", base_url, id, WORK_ITEMS_API_VERSION)
+  end
+
+  function t.patch_work_item(params, cb)
+    rest_patch("patch", item_url(params.id), params.patch, function(err, raw)
+      local failed_test = err and test_failure(err.message)
+      if failed_test then return cb(transport.error("conflict", failed_test)) end
+      cb(err, raw)
+    end)
+  end
+
+  function t.create_work_item(params, cb)
+    if not params.project then
+      finish(cb, transport.error("invalid", "a project is required to create a work item"))
       return
     end
-    run(args, cb)
+    rest_patch("post", string.format("%s/%s/_apis/wit/workitems/$%s?api-version=%s", base_url,
+      urls.encode(params.project), urls.encode(params.type), WORK_ITEMS_API_VERSION), params.patch, cb)
   end
 
   function t.add_comment(params, cb)
@@ -189,6 +210,32 @@ function M.new(opts)
       "--path", params.path, "--depth", "1", "--output", "json" }, function(err, node)
       if err then return cb(err) end
       cb(nil, (type(node) == "table" and type(node.children) == "table") and node.children or {})
+    end)
+  end
+
+  -- az devops invoke cannot reach IdentityPicker: it looks areas up in the
+  -- organisation's ResourceAreas, which does not list it (checked
+  -- 2026-10-12). az rest calls the route directly with an ADO token. The
+  -- "ims" scope searches identities known to the organisation, by prefix of
+  -- name or email; the IMS identities route matches whole names only.
+  function t.resolve_identity(params, cb)
+    local body = vim.json.encode({ query = params.text, identityTypes = { "user" }, operationScopes = { "ims" },
+      options = { MinResults = IDENTITY_MAX, MaxResults = IDENTITY_MAX },
+      properties = { "DisplayName", "SignInAddress", "Mail", "Active" } })
+    exec({ "az", "rest", "--method", "post", "--url", base_url .. "/_apis/IdentityPicker/Identities?api-version="
+      .. IDENTITY_API_VERSION, "--resource", ADO_RESOURCE, "--headers", "Content-Type=application/json",
+      "--body", body, "--output", "json" }, function(err, data)
+      if err then return cb(err) end
+      local out = {}
+      local result = type(data) == "table" and type(data.results) == "table" and data.results[1] or {}
+      for _, ident in ipairs(type(result.identities) == "table" and result.identities or {}) do
+        local function str(v) return type(v) == "string" and v or nil end
+        if ident.active ~= false then
+          table.insert(out, { display_name = str(ident.displayName) or "", unique_name = str(ident.signInAddress) or "",
+            mail = str(ident.mail), id = str(ident.localId) })
+        end
+      end
+      cb(nil, out)
     end)
   end
 

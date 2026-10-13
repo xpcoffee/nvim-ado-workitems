@@ -25,12 +25,14 @@ test("with write_guard set, a write outside the area is refused and reported", f
   eq(refused.kind, "invalid")
   eq(#fake.writes, 0)
   eq(notes[1].level, vim.log.levels.ERROR)
-  ok(notes[1].msg:find("^%[ado%] write guard refused update_fields"), notes[1].msg)
+  ok(notes[1].msg:find("^%[ado%] write guard refused patch_work_item"), notes[1].msg)
 end)
 
 test("with write_guard off, the same write goes through", function()
   local session, fake = fresh({ write_guard = false, project = "P" })
-  session.get():update(101, { title = "x" }, function(err) eq(err, nil) end)
+  local item
+  session.get():get(101, function(_, it) item = it end)
+  session.get():update_if_unchanged(item, { title = "x" }, function(err) eq(err, nil) end)
   eq(#fake.writes, 1)
 end)
 
@@ -63,11 +65,27 @@ test("with projects configured, ensure_project neither prompts nor calls ADO", f
   eq(#fake.calls, 0)
 end)
 
-test("the first catalog load is reported once in :messages", function()
+test("the first catalog load is progress, kept out of :messages, and shown once", function()
   local session, _, notes = fresh({ write_guard = false, project = "P" })
+  local echoes = {}
+  require("ado.nvim.progress").echo = function(msg) table.insert(echoes, msg) end
   session.get():my_items(function() end)
   session.get():my_items(function() end)
-  eq(notes, { { msg = "[ado] loaded 4 work item types for P (1 call)", level = vim.log.levels.INFO } })
+  eq(notes, {})
+  eq(echoes, { "loaded 4 work item types for P (1 call)" })
+end)
+
+test("configured types the project lacks are warned about once in :messages", function()
+  local session, _, notes = fresh({ write_guard = false, project = false,
+    projects = { { name = "P", types = { "Task", "Epik", "Storey" } } } })
+  session.get():my_items(function() end)
+  session.get():my_items(function() end)
+  local warnings = {}
+  for _, n in ipairs(notes) do
+    if n.level == vim.log.levels.WARN then table.insert(warnings, n.msg) end
+  end
+  eq(warnings, { "[ado] types configured for project P that it does not have: 'Epik', 'Storey'; its types are"
+    .. " Task, User Story, Bug, Issue" })
 end)
 
 test("open_categories from setup reach the session", function()

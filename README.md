@@ -11,7 +11,8 @@ Requires Neovim 0.10+, `az`, and `pandoc` (for the description markdown round-tr
 require("ado").setup({
   org = "your-org",       -- defaults to $ADO_ORG, else "example-org"
   -- The projects lists cover, each with the types its rows may be created as
-  -- or changed to. Without it, lists cover the one project below.
+  -- or changed to. Without it, lists cover the one project below, which has
+  -- no types, so its rows cannot be created, copied or change type.
   projects = {
     { name = "Example", types = { "Task", "User Story", "Feature", "Milestone", "Bug", "Issue" } },
   },
@@ -44,8 +45,8 @@ area view:
 | `<leader>wb` | open the same query in the browser |
 | `<leader>wr` | reload |
 
-The window bar shows the filters and the counts. Views are read-only for
-now: `:w` saves nothing.
+The window bar shows the filters and the counts. Edit titles and states in
+place and save with `:w` (see "Editing the views" below).
 
 ```lua
 require("ado").setup({
@@ -91,7 +92,34 @@ require("ado").setup({
 })
 ```
 
-## Editing
+## Editing the views
+
+Change a row's title or state column in an area view, or the title line or
+`state:` line of the item view's own item, then `:w`. The save covers every
+view with unsaved edits and shows a summary first: `y` applies, `n` or `q`
+cancels and keeps the edits. All the changes to one work item go to ADO
+as one write, which ADO applies whole or not at all, so ADO rules and
+alerts never see an item half changed. Each write is refused if the item
+changed in ADO since the view loaded; the save then stops and the views
+reload. A save that completes ends in one line, such as `[ado] saved 3
+changes to 3 work items: 2 field updates, 1 created (#1000)`. A save that
+stops opens a report (`q` closes it) of the work items saved, failed and
+not attempted. Each work item's write is logged as one JSON line, listing
+its changes, in `stdpath("state")/ado-workitems/audit.log` (set
+`audit_log` in `setup()` to move it).
+
+Rows can also be deleted, pasted, moved or added, and their type, assignee
+and tags changed; `docs/architecture.md` describes what each edit does.
+Every type a row sets must be one of its project's `types` in `setup()`:
+a new line, a copy or a type change in a project with no `types` makes the
+save refuse, with the `setup()` entry to add and the project's types. A
+`types` entry the project does not have is warned about once in
+`:messages` when the project's types load. Sub-area rows, headings and the
+area row are read-only. While an
+item view has unsaved edits, `<Tab>` and `<leader>wt` are refused; save or
+reload (`<leader>wr`, which asks before discarding) first.
+
+## Editing in the detail buffer
 
 The detail buffer is read-only. Put the cursor on a field and press `<CR>` (or
 an insert key: `i`/`a`/`o`…) to open a focused floating editor for just that

@@ -1,0 +1,44 @@
+{
+  "results": [
+    {
+      "identities": [
+        {
+          "active": true,
+          "department": null,
+          "description": null,
+          "displayName": "Test User",
+          "entityId": "vss.ds.v1.ims.user.00000000000000000000000000000001",
+          "entityType": "User",
+          "guest": false,
+          "isMru": false,
+          "jobTitle": null,
+          "localDirectory": "vsd",
+          "localId": "00000000-0000-0000-0000-000000000001",
+          "mail": "test.user@example.com",
+          "mailNickname": null,
+          "originDirectory": "aad",
+          "originId": "00000000-0000-0000-0000-000000000002",
+          "physicalDeliveryOfficeName": null,
+          "samAccountName": null,
+          "scopeName": null,
+          "signInAddress": "test.user@example.com",
+          "subjectDescriptor": null,
+          "surname": null,
+          "telephoneNumber": null
+        },
+        {
+          "displayName": "Former User",
+          "entityId": "vss.ds.v1.ims.user.00000000000000000000000000000003",
+          "localDirectory": "vsd",
+          "localId": "00000000-0000-0000-0000-000000000003",
+          "mail": null,
+          "active": false,
+          "originId": "00000000-0000-0000-0000-000000000004",
+          "signInAddress": "former.user@example.com"
+        }
+      ],
+      "pagingToken": null,
+      "queryToken": "00000000-0000-0000-0000-000000000000"
+    }
+  ]
+}

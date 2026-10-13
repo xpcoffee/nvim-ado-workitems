@@ -112,6 +112,7 @@ function M.load(session, loc, opts, cb)
     if err then return cb(err) end
     progress(1, 2, "item")
     local rel = item.relations
+    item.parent = rel.parent
     local sections = link_sections(rel.links, link_types)
     local ids, seen = {}, {}
     local function add(id)
@@ -274,6 +275,25 @@ function M.collapse(display, id)
   local items = display.expanded[id]
   display.expanded[id] = nil
   for _, it in ipairs(items or {}) do M.collapse(display, it.id) end
+end
+
+-- What the change plan needs to know about a loaded view besides its rows
+-- (core/plan.lua): the viewed item, each link section's display name, and
+-- every linked ID, including those the state filter hides.
+function M.plan_fields(view)
+  local known, names = {}, {}
+  for _, section in ipairs(view.sections) do
+    known[section.rel] = {}
+    names[section.rel] = section.name
+    for _, it in ipairs(section.items) do table.insert(known[section.rel], it.id) end
+  end
+  local it = view.item
+  return {
+    rel = it.id,
+    item = { id = it.id, rev = it.rev, area = it.area, project = it.project, parent = it.parent },
+    link_names = names,
+    known = { links = known },
+  }
 end
 
 -- The location selecting a row leads to (R3.2, R3.3): another item's view,

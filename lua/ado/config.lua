@@ -22,11 +22,17 @@ local config = {
   -- children always show; each other type gets a section, its -Forward and
   -- -Reverse ends apart.
   link_types = { "System.LinkTypes.Hierarchy", "System.LinkTypes.Related" },
+  -- The type a new line gets when its type column is empty (RFC 0001
+  -- R5.18): one for area views, one for an item view's children.
+  default_types = { area = "Task", children = "Task" },
   -- State categories that count as open in every list (RFC 0002 R1.3).
   open_categories = { "Proposed", "InProgress" },
   -- { area = "Project\\Area", deny_types = { "Issue" } } limits writes to that
   -- area and its sub-areas (core/write_guard.lua). Off by default.
   write_guard = nil,
+  -- File the audit log appends one JSON line to per saved change (RFC 0001
+  -- R7.4); nil means stdpath("state") .. "/ado-workitems/audit.log".
+  audit_log = nil,
   -- Replaces the az transport; tests pass the fake transport here.
   transport = nil,
 }

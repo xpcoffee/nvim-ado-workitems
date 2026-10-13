@@ -57,25 +57,9 @@ test("query without a project omits --project", function()
   eq(argvs[1], { "az", "boards", "query", "--wiql", "W", "--output", "json", "--org", URL })
 end)
 
-test("update_fields uses dedicated flags, and --fields for tags", function()
-  local t, argvs = transport()
-  call(t, "update_fields", { id = 7, fields = { ["System.Title"] = "T", ["System.Tags"] = "a; b" } })
-  eq(argvs[1], { "az", "boards", "work-item", "update", "--id", "7", "--output", "json",
-    "--title", "T", "--fields", "System.Tags=a; b", "--org", URL })
-  call(t, "update_fields", { id = 7, fields = {
-    ["System.State"] = "Active", ["System.AssignedTo"] = "A <a@x>",
-    ["System.IterationPath"] = "P\\S1", ["System.Description"] = "<p/>" } })
-  eq(argvs[2], { "az", "boards", "work-item", "update", "--id", "7", "--output", "json",
-    "--state", "Active", "--assigned-to", "A <a@x>", "--iteration", "P\\S1", "--description", "<p/>",
-    "--org", URL })
-end)
-
-test("update_fields refuses a field it has no flag for, without running az", function()
-  local t, argvs = transport()
-  local err = call(t, "update_fields", { id = 7, fields = { ["System.AreaPath"] = "P\\X" } })
-  eq(err.kind, "invalid")
-  eq(#argvs, 0)
-end)
+local PATCH_HEAD = { "az", "rest", "--method", "patch", "--url", URL .. "/_apis/wit/workitems/7?api-version=7.1",
+  "--resource", "499b84ac-1321-427f-aa17-267ca6975798", "--headers", "Content-Type=application/json-patch+json",
+  "--body" }
 
 test("add_comment runs update --discussion", function()
   local t, argvs = transport()
@@ -224,4 +208,59 @@ test("the recorded children query normalises, with relations null", function()
   local item = workitem.normalise(raws[2], "example-org")
   eq({ item.id, item.type, item.state }, { 1004, "Task", "New" })
   eq(workitem.relations(raws[2]), { children = {}, links = {} })
+end)
+
+test("create_work_item posts the patch to the type's create URL, with the project and type encoded", function()
+  local t, argvs = transport({ stdout = read("work_item_create.json") })
+  local patch = { { op = "add", path = "/fields/System.Title", value = "T" } }
+  local err, raw = call(t, "create_work_item", { project = "My P", type = "User Story", patch = patch })
+  eq(err, nil)
+  eq({ raw.id, raw.rev, raw.fields["System.State"] }, { 1001, 1, "New" })
+  local argv = argvs[1]
+  eq({ unpack(argv, 1, 6) }, { "az", "rest", "--method", "post", "--url",
+    URL .. "/My%20P/_apis/wit/workitems/$User%20Story?api-version=7.1" })
+  eq(vim.json.decode(argv[12]), patch)
+  local missing = call(transport(), "create_work_item", { type = "Task", patch = patch })
+  eq(missing.kind, "invalid")
+end)
+
+test("resolve_identity searches the people picker through az rest and keeps active identities", function()
+  local t, argvs = transport({ stdout = read("identity_picker.json") })
+  local err, found = call(t, "resolve_identity", { text = "tes" })
+  eq(err, nil)
+  eq(found, { { display_name = "Test User", unique_name = "test.user@example.com", mail = "test.user@example.com",
+    id = "00000000-0000-0000-0000-000000000001" } })
+  local argv = argvs[1]
+  eq({ unpack(argv, 1, 6) }, { "az", "rest", "--method", "post", "--url",
+    URL .. "/_apis/IdentityPicker/Identities?api-version=7.1-preview.1" })
+  local body = vim.json.decode(argv[12])
+  eq({ body.query, body.operationScopes, body.identityTypes }, { "tes", { "ims" }, { "user" } })
+  ok(not vim.tbl_contains(argv, "--org"), "az rest takes the organisation in the URL")
+end)
+
+test("a failed test op is a conflict carrying ADO's message; other failures stay failures", function()
+  local stderr = read("work_item_patch_test_failed.txt")
+  local err = call(transport({ code = 1, stderr = stderr }), "patch_work_item", { id = 7, patch = {} })
+  eq(err, { kind = "conflict",
+    message = "VS403351: Test Operation for path /rev failed, value 2 was not equal to test value 1." })
+  err = call(transport({ code = 1, stderr = "ERROR: Bad Request(TF201036: one parent)" }), "patch_work_item",
+    { id = 7, patch = {} })
+  eq(err, { kind = "failed", message = "ERROR: Bad Request(TF201036: one parent)" })
+end)
+
+test("patch_work_item sends the patch as given, in one az rest call", function()
+  local t, argvs = transport({ stdout = read("work_item_patch.json") })
+  local patch = { { op = "test", path = "/rev", value = 4 },
+    { op = "add", path = "/fields/System.Title", value = "T" },
+    { op = "test", path = "/relations/0/url", value = "https://dev.azure.com/o/_apis/wit/workItems/8" },
+    { op = "remove", path = "/relations/0" },
+    { op = "add", path = "/relations/-", value = { rel = "System.LinkTypes.Hierarchy-Reverse",
+      url = "https://dev.azure.com/o/_apis/wit/workItems/9" } } }
+  local err, raw = call(t, "patch_work_item", { id = 7, patch = patch })
+  eq(err, nil)
+  eq({ raw.id, raw.rev, raw.fields["System.State"] }, { 1002, 3, "Closed" })
+  local argv = argvs[1]
+  eq({ unpack(argv, 1, 11) }, PATCH_HEAD)
+  eq(vim.json.decode(argv[12]), patch)
+  eq({ unpack(argv, 13) }, { "--output", "json" })
 end)

@@ -1,8 +1,10 @@
 -- Detail buffer for one work item. The buffer is read-only; pressing <CR> or an
 -- insert key on a field opens a floating editor for that one field (float.lua
 -- owns the editor lifecycle). State uses a select; the description uses a
--- markdown float. All writes go through do_update + the session's rev guard.
+-- markdown float. Field writes go through do_update, as one patch that ADO
+-- refuses whole if the item changed since it was loaded.
 local float = require("ado.nvim.float")
+local plan = require("ado.core.plan")
 local session = require("ado.nvim.session")
 
 local M = {}
@@ -98,7 +100,7 @@ local function render(buf, item)
   vim.bo[buf].modifiable = false
 end
 
--- Single write path: rev check, update, re-render. The editor float is already
+-- Single write path: one rev-guarded patch, then re-render. The editor float is already
 -- closed by the time this runs, so a slow `az` never leaves a window behind.
 local function do_update(buf, fields)
   local entry = detail[buf]
@@ -107,9 +109,7 @@ local function do_update(buf, fields)
   session.get():update_if_unchanged(item, fields, function(err, updated)
     if err then
       if err.kind == "conflict" then
-        vim.notify(string.format(
-          "[ado] #%s changed remotely (rev %s -> %s); reload (,wr) before saving",
-          item.id, tostring(err.expected_rev), tostring(err.actual_rev)), vim.log.levels.WARN)
+        vim.notify("[ado] " .. err.message .. "; reload (,wr) before saving", vim.log.levels.WARN)
       end
       return
     end
@@ -117,6 +117,24 @@ local function do_update(buf, fields)
     entry.item = updated
     render(buf, entry.item)
     vim.notify("[ado] updated #" .. item.id, vim.log.levels.INFO)
+  end)
+end
+
+-- Resolves the typed assignee as a view save does (RFC 0001 R5.19) and
+-- writes only when it names one identity. An empty text unassigns, and the
+-- "Name <email>" form the line shows uses its email as is.
+local function set_assignee(buf, text)
+  text = vim.trim(text)
+  local email = text:match("<([^<>]+)>$")
+  if text == "" or email then return do_update(buf, { assignee = email or "" }) end
+  session.get():resolve_identity(text, function(err, found)
+    if err then return end
+    local who, problem = plan.choose_identity(found or {}, text)
+    if not who then
+      vim.notify("[ado] assignee not changed: " .. problem, vim.log.levels.WARN)
+      return
+    end
+    do_update(buf, { assignee = who.unique_name })
   end)
 end
 
@@ -172,6 +190,7 @@ function M.edit_field(buf, field)
     on_confirm = function(new_lines)
       local val = table.concat(new_lines, " ")
       if val == current then return end
+      if field == "assignee" then return set_assignee(buf, val) end
       do_update(buf, { [field] = val })
     end,
   })

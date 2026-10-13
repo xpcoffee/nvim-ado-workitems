@@ -67,8 +67,11 @@ local function open_picker(title, items, opts)
         local entry = action_state.get_selected_entry()
         if not entry then return end
         detail.pick_state(entry.value, function(state)
-          session.get():update(entry.value.id, { state = state }, function(err)
-            if not err then
+          session.get():update_if_unchanged(entry.value, { state = state }, function(err)
+            if err and err.kind == "conflict" then
+              vim.notify("[ado] " .. err.message .. "; nothing was changed; reopen the list to see it",
+                vim.log.levels.WARN)
+            elseif not err then
               vim.notify(string.format("[ado] #%s -> %s", entry.value.id, state), vim.log.levels.INFO)
             end
           end)

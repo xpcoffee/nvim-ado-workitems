@@ -10,9 +10,18 @@
 --   fake.types_omit_categories     work_item_types lists states without
 --                                  categories, as the per-type fallback expects
 --
+-- patch_work_item and create_work_item apply a JSON Patch whole or not at
+-- all, as ADO does: a failed op, a failed "test" on /rev (a "conflict"), or
+-- a state the type lacks leaves every item as it was. A relation is removed
+-- by its index in the item's relations. Links are stored on both items and,
+-- as in ADO (checked 2026-10-12), leave both revs unchanged; a parent link
+-- keeps System.Parent in step. Adding a Related link that exists changes
+-- nothing. Created items get IDs from 1000 up and their type's first state.
+--
 -- A seed item's project is s.project, else seed.projects[1]. A project's
 -- types are seed.project_types[name], else seed.types.
 local transport = require("ado.core.transport")
+local workitem = require("ado.core.workitem")
 
 local Fake = {}
 Fake.__index = Fake
@@ -95,6 +104,7 @@ function Fake.new(seed)
     counts = {},
     comments = {},
     types_omit_categories = false,
+    next_id = 1000,
   }, Fake)
   for _, op in ipairs(transport.OPERATIONS) do
     local handler = Fake["op_" .. op]
@@ -266,12 +276,46 @@ function Fake:op_get_work_item(params)
   return nil, raw
 end
 
-function Fake:op_update_fields(params)
-  local it = self.items[params.id]
-  if not it then return not_found(params.id) end
-  for ref, value in pairs(params.fields or {}) do it.fields[ref] = value end
-  it.rev = it.rev + 1
-  return self:op_get_work_item({ id = params.id })
+-- As in ADO, an assignee is written as a unique name and read back as an
+-- identity.
+function Fake:identity_value(unique_name)
+  for _, x in ipairs(self.seed.identities or {}) do
+    if x.unique_name:lower() == tostring(unique_name):lower() then
+      return nil, { displayName = x.display_name, uniqueName = x.unique_name }
+    end
+  end
+  return transport.error("failed", "unknown identity " .. tostring(unique_name))
+end
+
+-- ADO's message when a patch's test op fails (checked 2026-10-12).
+local TEST_FAILED = "Test Operation for path %s failed, value %s was not equal to test value %s."
+
+function Fake:check_state(fields)
+  for _, t in ipairs(self:types_of(fields["System.TeamProject"])) do
+    if t.name == fields["System.WorkItemType"] then
+      for _, st in ipairs(t.states) do if st.name == fields["System.State"] then return nil end end
+      return transport.error("failed", string.format(
+        "The field 'State' contains the value '%s' that is not in the list of supported values",
+        tostring(fields["System.State"])))
+    end
+  end
+end
+
+-- Sets one field on fields. As in ADO, an assignee is written as a unique
+-- name and read back as an identity, an empty value clears the field, and
+-- "add" on System.Tags merges into the tags the item has (checked
+-- 2026-10-12).
+function Fake:set_field(fields, ref, value, op)
+  if ref == "System.AssignedTo" and value ~= "" then
+    local err
+    err, value = self:identity_value(value)
+    if err then return err end
+  end
+  if ref == "System.Tags" and op == "add" and fields[ref] and value ~= "" then
+    value = fields[ref] .. "; " .. value
+  end
+  if value == "" then value = nil end
+  fields[ref] = value
 end
 
 function Fake:op_add_comment(params)
@@ -281,6 +325,144 @@ function Fake:op_add_comment(params)
   table.insert(self.comments[params.id], params.text)
   it.rev = it.rev + 1
   return self:op_get_work_item({ id = params.id })
+end
+
+local function find_relation(it, rel, target_url)
+  for i, r in ipairs(it.relations) do
+    if r.rel == rel and r.url == target_url then return i end
+  end
+end
+
+-- ADO refuses a second parent.
+function Fake:link(it, rel, target)
+  local other = self.items[target]
+  if not other then return not_found(target) end
+  if find_relation(it, rel, other.url) then return nil end
+  local child = rel == workitem.PARENT and it or rel == workitem.CHILD and other or nil
+  if child and child.fields["System.Parent"] then
+    return transport.error("failed", string.format(
+      "TF201036: You cannot add a Parent link between work items %d and %d because a work item can have only one Parent link.",
+      child.id, child == it and other.id or it.id))
+  end
+  table.insert(it.relations, relation(self.seed.org, rel, other.id))
+  table.insert(other.relations, relation(self.seed.org, workitem.reverse_rel(rel), it.id))
+  if child then child.fields["System.Parent"] = child == it and other.id or it.id end
+end
+
+-- Removes relation `index` (from 0) of `it`, and its other end.
+function Fake:unlink(it, index)
+  local r = it.relations[index + 1]
+  if not r then
+    return transport.error("failed", string.format("#%d has no relation at index %d", it.id, index))
+  end
+  table.remove(it.relations, index + 1)
+  local other = self.items[workitem.relation_target(r)]
+  if other then
+    local j = find_relation(other, workitem.reverse_rel(r.rel), it.url)
+    if j then table.remove(other.relations, j) end
+  end
+  if r.rel == workitem.PARENT then it.fields["System.Parent"] = nil end
+  if r.rel == workitem.CHILD and other then other.fields["System.Parent"] = nil end
+end
+
+-- Applies patch to item `id`; the caller restores the items on an error.
+function Fake:apply_patch(id, patch, creating)
+  local it = self.items[id]
+  if not it then return not_found(id) end
+  local fields_changed = false
+  for _, p in ipairs(patch or {}) do
+    local ref = type(p.path) == "string" and p.path:match("^/fields/(.+)$")
+    local index = type(p.path) == "string" and p.path:match("^/relations/(%d+)$")
+    local err
+    local tested = type(p.path) == "string" and p.path:match("^/relations/(%d+)/url$")
+    if p.op == "test" and p.path == "/rev" and not creating then
+      if p.value ~= it.rev then
+        return transport.error("conflict", "VS403351: " .. TEST_FAILED:format(p.path, it.rev, tostring(p.value)))
+      end
+    elseif p.op == "test" and tested and not creating then
+      local r = it.relations[tonumber(tested) + 1]
+      if not r or r.url ~= p.value then
+        return transport.error("conflict", TEST_FAILED:format(p.path, r and r.url or "null", tostring(p.value)))
+      end
+    elseif ref and (p.op == "add" or p.op == "replace") then
+      err = self:set_field(it.fields, ref, p.value, p.op)
+      fields_changed = true
+    elseif p.path == "/relations/-" and p.op == "add" then
+      local target = type(p.value) == "table" and workitem.relation_target(p.value)
+      if not target then return transport.error("invalid", "fake transport: relation needs a work item url") end
+      err = self:link(it, p.value.rel, target)
+    elseif index and p.op == "remove" and not creating then
+      err = self:unlink(it, tonumber(index))
+    else
+      return transport.error("invalid", string.format("fake transport: unsupported patch op %s %s",
+        tostring(p.op), tostring(p.path)))
+    end
+    if err then return err end
+  end
+  local err = self:check_state(it.fields)
+  if err then return err end
+  if fields_changed and not creating then it.rev = it.rev + 1 end
+end
+
+function Fake:op_patch_work_item(params)
+  if not self.items[params.id] then return not_found(params.id) end
+  local before = copy(self.items)
+  local err = self:apply_patch(params.id, params.patch)
+  if err then
+    self.items = before
+    return err
+  end
+  return self:op_get_work_item({ id = params.id, relations = true })
+end
+
+function Fake:op_create_work_item(params)
+  local project = params.project or self.seed.projects[1]
+  local initial
+  for _, t in ipairs(self:types_of(project)) do
+    if t.name == params.type then initial = t.states[1].name end
+  end
+  if not initial then
+    return transport.error("invalid", "work item type " .. tostring(params.type) .. " does not exist")
+  end
+  local before = copy(self.items)
+  local id = self.next_id
+  self.items[id] = {
+    id = id,
+    rev = 1,
+    url = item_api_url(self.seed.org, id),
+    fields = {
+      ["System.Id"] = id,
+      ["System.TeamProject"] = project,
+      ["System.WorkItemType"] = params.type,
+      ["System.State"] = initial,
+      ["System.ChangedDate"] = "2026-10-12T12:00:00Z",
+    },
+    relations = {},
+  }
+  local err = self:apply_patch(id, params.patch, true)
+  if err then
+    self.items = before
+    return err
+  end
+  self.next_id = id + 1
+  return self:op_get_work_item({ id = id, relations = true })
+end
+
+-- Like ADO's people picker: identities with a word of the display name, or
+-- the unique name, starting with the text, without regard to case.
+function Fake:op_resolve_identity(params)
+  local text = tostring(params.text or ""):lower()
+  local out = {}
+  for _, ident in ipairs(self.seed.identities or {}) do
+    local hit = ident.unique_name:lower():sub(1, #text) == text or ident.display_name:lower():sub(1, #text) == text
+    for word in ident.display_name:lower():gmatch("%S+") do
+      if word:sub(1, #text) == text then hit = true end
+    end
+    if hit and text ~= "" then
+      table.insert(out, { display_name = ident.display_name, unique_name = ident.unique_name, id = ident.id })
+    end
+  end
+  return nil, out
 end
 
 -- Seed areas are in the work item field form, P\Team\A; ADO's

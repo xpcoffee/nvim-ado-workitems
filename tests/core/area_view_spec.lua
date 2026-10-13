@@ -69,7 +69,8 @@ test("A0001-1 the area view lists sub-areas first, then the open items", functio
   eq(row_keys(view), { "A", "B", 1, 2, 3 })
   eq(view.rows[1], { kind = "area", path = "P\\Team\\A", name = "A" })
   eq(view.rows[4], { kind = "item", id = 2, rev = 1, type = "Task", state = "Doing",
-    assignee = "Me Myself", tags = "api; backend", title = "Two" })
+    assignee = "Me Myself", assignee_unique = "me@example.com", tags = "api; backend", title = "Two",
+    project = "P", area = "P\\Team" })
   eq(view.areas[1].has_children, true)
   eq(view.truncated, false)
 end)

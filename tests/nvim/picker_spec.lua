@@ -100,3 +100,39 @@ test("a search with only closed matches opens an empty picker so <C-a> can widen
   opened[1].maps["<C-a>"]()
   eq(ids(opened[2].results), { 2 })
 end)
+
+-- <C-s> on #101 (a Task) in "My work items", choosing state.
+local function change_state(fake, state)
+  local picker = require("ado.nvim.picker")
+  picker.my_items()
+  local item
+  for _, it in ipairs(opened[1].results) do if it.id == 101 then item = it end end
+  package.loaded["telescope.actions.state"].get_selected_entry = function() return { value = item } end
+  vim.ui.select = function(_, _, on_choice) on_choice(state) end
+  local notes = {}
+  vim.notify = function(msg, level) table.insert(notes, { msg = msg, level = level }) end
+  return item, notes, function() opened[1].maps["<C-s>"]() end
+end
+
+test("<C-s> changes the state in one rev-guarded patch", function()
+  local _, fake = fresh()
+  local item, notes, press = change_state(fake, "Doing")
+  press()
+  eq(#fake.writes, 1)
+  eq(fake.writes[1].params, { id = item.id, patch = {
+    { op = "test", path = "/rev", value = item.rev },
+    { op = "add", path = "/fields/System.State", value = "Doing" },
+  } })
+  eq(notes[#notes].msg, string.format("[ado] #%s -> Doing", item.id))
+end)
+
+test("<C-s> after a remote change writes nothing and says so", function()
+  local _, fake = fresh()
+  local item, notes, press = change_state(fake, "Doing")
+  fake:edit_remotely(item.id, { ["System.Title"] = "Theirs" })
+  press()
+  eq(fake.items[item.id].fields["System.Title"], "Theirs")
+  ok(fake.writes[1].failed)
+  eq(notes, { { msg = string.format("[ado] #%s changed remotely (rev 1 -> 2); nothing was changed; reopen the list to see it",
+    item.id), level = vim.log.levels.WARN } })
+end)

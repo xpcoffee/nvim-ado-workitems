@@ -104,6 +104,24 @@ test("configured projects win over a configured project", function()
   eq(s:default_project(), "P")
 end)
 
+test("configured types the catalog lacks are reported once per session, without failing the load", function()
+  local events = {}
+  local s = session.new({ transport = Fake.new(data()), org = "test-org",
+    projects = { { name = "P", types = { "task", "Epik", "Bug", "Storey" } }, { name = "Q", types = { "Bug" } } },
+    on_event = function(e) table.insert(events, e) end })
+  local loaded
+  s:catalog("P", function(err, catalog) eq(err, nil) loaded = catalog end)
+  ok(loaded ~= nil)
+  s:catalog("P", function() end)
+  s:catalog("Q", function() end)
+  local unknown = {}
+  for _, e in ipairs(events) do
+    if e.kind == "unknown_types" then table.insert(unknown, e) end
+  end
+  eq(unknown, { { kind = "unknown_types", project = "P", unknown = { "Epik", "Storey" },
+    valid = { "Task", "User Story", "Bug", "Issue" } } })
+end)
+
 test("a malformed projects setting fails at session creation", function()
   fails(function() new({ projects = { { types = {} } } }) end, "projects%[1%] needs a name")
   fails(function() new({ projects = { { name = "P", types = "Task" } } }) end, "types must be a list")

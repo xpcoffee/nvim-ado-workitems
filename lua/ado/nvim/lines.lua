@@ -74,6 +74,13 @@ function M.render(rows, ids, widths)
   return out, prefixes, widths
 end
 
+-- The line after its row ID prefix, trimmed: the whole title of the item
+-- view's own row, whatever it holds.
+function M.body(line)
+  local rest = line:match("^/%d+ (.*)$") or line
+  return trim(rest)
+end
+
 -- { row_id, kind = "area", name }, { row_id, kind = "heading", label } or
 -- { row_id, kind = "item", type, state, assignee, tags, title }. A line
 -- without a row ID prefix has row_id nil.

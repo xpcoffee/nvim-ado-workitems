@@ -36,9 +36,11 @@ The order matters. The error notifier sits outside the write guard, so a
 refused write is reported to the user like any other failure, and the guard
 sees the raw errors from the transport. Because the notifier reports every
 transport failure, code that calls core session methods must not notify the
-same error again. Errors the core raises itself, such as the `conflict` from
-`Session:update_if_unchanged`, do not pass through the notifier, so callers
-report those.
+same error again. Errors the core raises itself do not pass through the
+notifier, and neither does a `conflict` from the transport, so callers
+report those: the caller knows which rev it expected and how the user can
+recover. While a save applies, `nvim/save.lua` mutes the notifier
+(`session.mute_errors`), because the save's report carries the error.
 
 ## Projects and type catalogs
 
@@ -90,7 +92,7 @@ history of locations (`core/history.lua`).
 Each row starts with a session-wide row ID, `/12 `, which the buffer
 conceals; `nvim/registry.lua` maps it to what the row shows. Rows are read
 by ID, never by matching text, so two items with the same title stay apart.
-In this phase views are read-only: `:w` saves nothing.
+Views are edited in place and saved with `:w`; see "Saving views" below.
 
 The browser URL (`<leader>wb`) runs the view's query in ADO's web UI. The
 web UI rejects URLs over about 3,050 characters (measured: 3,053 loads,
@@ -142,14 +144,252 @@ in is left alone and a new split is made. Area and item locations share one
 history (`layout.history`); back and forward show each location in its
 role's window.
 
+## Saving views
+
+A view is edited as text, and `:w` in any view saves the edits of every
+modified view at once (RFC 0001 R5.2). The title, state, assignee, tags
+and type columns, and the item view's field lines, edit those fields (see
+"Column edits" below). A row's position stands for a relationship, so deleting,
+pasting and moving rows changes relationships:
+
+| Edit | Area view | Item view: children | Item view: parent row | Item view: other links |
+| --- | --- | --- | --- | --- |
+| Delete only | no change (R5.4) | remove the link to the parent | remove the link to the parent | remove the link |
+| Paste, original kept | copy in this area | copy under this parent, or add the parent if the item has none | set the parent if the item has none, else reject | add the link |
+| Delete and paste | change the area | change the parent | change the parent | move the link |
+| New line | create in this area | create under this parent, in its area | reject | reject |
+
+Lines keep their identity through yank, delete and put, because each line
+starts with a concealed row ID and the registry maps it to the row it
+showed (`nvim/registry.lua`). A row ID from another buffer is a pasted row;
+an ID the registry no longer holds (its view reloaded since the yank)
+rejects the save.
+
+```mermaid
+flowchart LR
+  W[":w<br/>nvim/save.lua"] --> R["view records<br/>nvim/view_buffer.lua"]
+  R --> PR["prepare<br/>core/plan.lua"]
+  PR --> P["change plan<br/>core/plan.lua"]
+  P --> S["summary float<br/>nvim/summary_ui.lua"]
+  S -->|y| A["apply, one request per item<br/>core/apply.lua, core/requests.lua"]
+  S -->|n, q| K["nothing sent,<br/>edits kept"]
+  A --> L["audit log<br/>nvim/audit.lua"]
+  A --> RL["reload touched views"]
+```
+
+1. **View records.** For each modified view, `view_buffer.record` pairs the
+   rows shown at the last load (from the row ID registry) with the rows
+   parsed from the buffer now; a pasted row also carries its origin row.
+   The core never reads buffer text (R6.2).
+2. **Prepare.** `plan.prepare` loads the type catalogs the state checks
+   need (usually cached, so 0 calls), one `resolve_identity` per distinct
+   edited assignee text (R5.19), and, for the cycle check (R5.12), the
+   ancestors of every new parent that no loaded row already shows, one
+   `get_work_item` per level. `plan.compute` then makes no calls, so an
+   unknown or ambiguous assignee rejects before anything is written.
+3. **Plan.** In an item view, the fixed lines (the item's own lines, the
+   area row and the headings) mark which relationship the rows below them
+   stand for, so deleting or moving one rejects the save. The plan sorts
+   every row into "in place", "removed" or "added" per relationship across
+   all views, then decides per item: a removal and one addition is a move,
+   an addition with the original kept is a copy (R5.6), and one cut pasted
+   twice (R5.10) or a second parent (R5.9) rejects. An expanded row and the
+   rows shown beneath it move as one block (R5.8). Title and state edits to
+   one item are combined across views, and conflicting ones reject (R5.10).
+4. **Summary.** Rejections first, then link removals, link additions,
+   parent and area changes, type changes, field changes, copies, new
+   items, warnings and rows with no change (R7.2). Link removals, copies
+   and type changes have their own line kinds, which the float highlights.
+   A warning says when a destination view's filters will hide an item
+   after reload (R5.13). `y` applies; `n`, `q`
+   or `<Esc>` cancels and leaves every buffer as edited. With any rejection
+   only cancel is offered, so a rejected plan never writes. A plan with
+   nothing to send shows its notes as a message and reloads the views.
+5. **Apply.** The plan's ops are grouped into one write request per work
+   item (`core/requests.lua`), and the requests run one at a time; see
+   "Write requests" below. Before each request, apply reads the item with
+   its links and refuses the request when ADO holds a different rev from
+   the one the plan was made from (R5.14). It also reads each other item
+   the request links to that has a request of its own, so no link is
+   written to an item that changed remotely. The first failure stops the
+   run, and the report lists the work items completed, failed and not
+   attempted (R5.15). A failed request wrote nothing to its item.
+6. **Audit log.** Each applied or failed request appends one JSON line
+   to `audit_log`, default `stdpath("state")/ado-workitems/audit.log`
+   (R7.4): time, work item ID, the new ID of a create, result, new rev or
+   error, and `changes`, one entry per change in the request (op, field,
+   from, to, link type and target, and the type, title, area and parent
+   of a create).
+7. **Reload and report.** Every view that shows an item the save touched
+   (both ends of each link) reloads, and after a full success so does
+   every saved view. A saved view that shows no touched item keeps its
+   edits after a failure. Once the reloads finish, the save reports; see
+   "Messages" below.
+
+### Write requests
+
+ADO rules and alerts can fire on any intermediate state of an item, for
+example an item briefly in a new state without its other fields set
+(owner request of 2026-10-12, plan 0001 section 8). So every change one
+save makes to one existing item goes to ADO as one JSON Patch, `az rest
+--method patch .../_apis/wit/workitems/<id>?api-version=7.1`, and each
+create as one POST to `.../<project>/_apis/wit/workitems/$<type>` with all
+its fields and its parent link. ADO applies a patch whole or not at all.
+
+```mermaid
+flowchart LR
+  P["plan ops<br/>in plan.ORDER"] --> G["group per item<br/>requests.group"]
+  G --> R["read the item<br/>with its links"]
+  R --> B["build the patch<br/>requests.patch"]
+  B --> W["one write<br/>patch_work_item"]
+  G --> C["one POST per create<br/>create_work_item"]
+```
+
+A patch for an existing item holds, in this order:
+
+1. `{ op = "test", path = "/rev", value = <rev the plan was made from> }`.
+   If the item changed after apply read it, ADO refuses the whole patch
+   with HTTP 412 and `VS403351`, which the transport reports as a
+   `conflict`, and the report says "#N changed remotely after it was read
+   at rev R, so ADO wrote nothing to it". This closes the read-then-write
+   window of risk 2 in plan 0001.
+2. Field changes: title, state, assignee, tags, type (with the state when
+   the row sets one, R5.22) and area path, each an `add` on
+   `/fields/<ref>`. Tags use `replace`, because ADO merges an `add` into
+   the item's tags.
+3. Link removals, highest index first, each a `test` that
+   `/relations/<i>/url` is still the URL the read returned, then a
+   `remove` of `/relations/<i>`. Links do not change an item's rev, so the
+   `/rev` test alone cannot tell whether the links moved since the read;
+   the URL test can. The URL must match exactly as read, because ADO puts
+   the project's GUID in it.
+4. Link additions, each an `add` on `/relations/-` with `rel` and the
+   target's `.../_apis/wit/workItems/<id>` URL.
+
+What this means for each kind of change:
+
+- **A parent change** is one request on the child, removing the old
+  parent link and adding the new one. A failure leaves the child under
+  its old parent; before this change it could leave the child with no
+  parent (plan 0001 PQ2).
+- **A Related link** is stored by ADO on both items, so the request on
+  one item writes both ends, and the plan sends it once, from the item
+  whose view the row was edited in. It cannot be atomic with the other
+  item's own request: when both items have field changes, they are two
+  requests, and a failure in between leaves the link and one item's
+  fields written.
+- **A create** carries its title, area, tags, assignee and parent link in
+  one POST, so a failure creates nothing.
+
+Requests run in this order (`requests.group`):
+
+1. Requests on existing items, in the order of their first op. The plan
+   sorts ops as link removals, parent changes, link additions, area
+   changes, type changes, field updates, then creates (`plan.ORDER`), so
+   an item whose request frees a parent runs before an item whose request
+   only adds one.
+2. Creates last, in plan order, so each new item's parent has had its own
+   request, and its rev check, before the create links to it. Nothing
+   else in a save links to a new item, because a new line cannot be
+   pasted anywhere before it exists.
+
+Edits made outside a save use the same route. A field edit in the detail
+buffer (title, state, assignee, tags, iteration, description) and a state
+change from the picker (`<C-s>`) go through `Session:update_if_unchanged`,
+which sends one `patch_work_item` that starts with a `test` on `/rev` at
+the rev the item was loaded at, then an `add` per field (`replace` for
+tags; `requests.fields_patch`). Nothing reads the item first. After a
+remote change ADO refuses the patch whole, and the user sees "[ado] #N
+changed remotely (rev R -> S); reload (,wr) before saving" in the detail
+buffer, or the same start and "nothing was changed" from the picker. The
+description goes as HTML, converted from the edited markdown with pandoc.
+An assignee edit in the detail buffer resolves the typed text as a save
+does (R5.19, "Column edits" below): one `resolve_identity`, and the patch
+is sent only when the text names exactly one identity. No match, or
+several, shows a warning that lists up to 5 of them and writes nothing.
+An empty text unassigns, and text in the `Name <email>` form, the form
+the detail buffer shows, is sent as the email without a lookup.
+
+Comments are the exception: `add_comment` still runs `az boards work-item
+update --discussion` with no rev check. A comment only appends to the
+item's discussion and changes no field, so a concurrent edit cannot be
+overwritten by it.
+
+The order does not rule out every intermediate state ADO could refuse.
+Two moves that swap a parent and its child each pass ADO's cycle check on
+their own, but the first can form a cycle while the second is still to
+run; the plan's cycle check (R5.12) covers only the final hierarchy.
+
+### Messages
+
+A save shows progress on one command-line line that each message replaces
+(`nvim/progress.lua`). Progress stays out of `:messages` and is cut to the
+command line's width, so it never waits for Enter. The views a save
+reloads load without progress. The save then ends in one line in
+`:messages`:
+
+- After a full save: `[ado] saved 6 changes to 3 work items: 3 field
+  updates, 1 parent change, 2 created (#1000, #1001)`. The counts are by
+  kind (field updates, type changes, area changes, parent changes, link
+  changes, created, copied), and new IDs are listed when a kind has at
+  most 3.
+- After a save that stopped: the report opens in a float like the
+  summary (`q` closes it), listing the work items completed, failed (with
+  the error) and not attempted, and the line is `[ado] save stopped at
+  #102: 1 of 3 work items saved, 1 not attempted; the report shows why`.
+- After a rejected plan: `[ado] save rejected: 2 problems, nothing was
+  sent; the views keep their edits`.
+- With nothing to send: `[ado] nothing to save: <the reason>`, or the
+  report float when several rows changed nothing.
+
+A view with unsaved edits keeps them through everything except an
+explicit reload, which asks first (R4.4). Writing another buffer never
+touches it (R6.8). `<Tab>` and the all-states toggle are refused while an
+item view has unsaved edits, because an expansion inserts and deletes
+lines by their loaded position. Loads and expansions stay out of the undo
+history, so `u` cannot remove expanded rows and plan their link removals.
+Views cannot be edited while they load, expand, or while a save applies,
+since the load would replace the edits.
+
+### Column edits
+
+- **Assignee (R5.19).** The text must name exactly one identity: one that
+  equals a display name or email, else the only identity whose name or
+  email starts with the text. None or several reject the save, naming the
+  row. An empty column unassigns. The `az` transport searches ADO's people
+  picker with `az rest`, because `az devops invoke` cannot reach it.
+- **Tags (R5.20).** The `;`-separated list replaces the item's tags; tags
+  compare as a set without regard to case. The summary lists the tags
+  added and removed. The save replaces the tags in the item's patch, and
+  so does a tag edit in the detail buffer, because `az boards work-item
+  update` only adds tags.
+- **Type (R5.18, R5.21, R5.22, R8.6).** Only a type in the project's
+  configured `types`, matched without regard to case. On an existing
+  item anything else is "no change" with the reason; on a new line it
+  rejects. A copy keeps the original's type, so a copy of a type outside
+  the copy's project's `types` rejects. In a project with no `types`, a
+  new line, a copy or a type change rejects, and the message shows the
+  `setup()` entry to add and the catalog's types. The item's state must
+  be valid for the new type, or the row must set one that is; the type
+  and that state go in one patch, since ADO refuses an item in a state its
+  type lacks.
+- **Configured types the catalog lacks.** When a project's catalog loads,
+  the session emits an `unknown_types` event for `types` entries the
+  catalog does not have; the presentation layer shows it once as a
+  warning in `:messages`. The load still succeeds.
+- **Filters (R5.13).** After planning, each view in the save that will
+  show a changed item, or that an item arrives in by a move, a new link, a
+  copy or a create, is checked against its filters (state, type, assignee,
+  tag) with the item's values after the save.
+
 ## Write guard
 
 The write guard (`lua/ado/core/write_guard.lua`) limits which work items the
 plugin may change. It exists for agent-run and manual tests against the real
 organisation: an organisation may watch work items of one type, such as `Issue`, so a test
-write to one could notify people. It is unrelated to the revision check in
-`Session:update_if_unchanged`, which refuses a write when the item changed in
-ADO since it was loaded.
+write to one could notify people. It is unrelated to the revision check, the
+`test` on `/rev` that each patch starts with, which makes ADO refuse a write
+when the item changed since it was loaded.
 
 It is off by default. Turn it on through `setup()`:
 
@@ -164,6 +404,9 @@ With the guard on:
 - Reads pass through unchanged.
 - A write is allowed only for an item in `area` or one of its sub-areas.
   Area paths compare case-insensitively, and `/` is accepted for `\`.
+- With `title_prefix` set, a write is allowed only for an item whose title
+  starts with it, and a create or retitle must keep it. Agent-run checks
+  set it, so they cannot write to an item they did not create.
 - A write to an item whose type is in `deny_types` is refused, and so is a
   change of type to a denied type. `deny_types` defaults to `{ "Issue" }`.
 - With no `area` set, every write is refused.
@@ -173,9 +416,24 @@ With the guard on:
   `invalid` whose message starts `write guard refused <operation>`.
 
 For a write to an existing item, the guard first reads the item with
-`get_work_item` to learn its area and type. The read and the write are two
-calls, not one atomic step: an item moved between them is not caught. If the
-read fails, the guard refuses the write.
+`get_work_item` to learn its area, type and title. A patch is checked
+whole before any of it is sent:
+
+- Every op must be one the guard has a rule for: a `test` on `/rev` or
+  on `/relations/<i>/url`, an `add` or `replace` on a field the plugin
+  edits, an `add` on `/relations/-` whose URL names a work item, or a
+  `remove` on `/relations/<i>`. Anything else refuses the patch.
+- The new type, title and area in it must themselves be allowed.
+- Every item at the other end of a link the patch adds or removes is
+  read and checked like the item itself. A removal names its link by
+  index, so the guard reads the item's relations to find the item at
+  that index.
+- A create must name its type in the URL, an allowed area and a
+  prefixed title, may only add links, and its parent is checked.
+
+The reads and the write are separate calls, not one atomic step: an item
+moved between them is not caught. If a read fails, the guard refuses the
+write.
 
 ## The `transport` config option
 

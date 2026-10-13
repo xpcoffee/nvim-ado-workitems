@@ -2,12 +2,14 @@
 -- project chooser that queries and state lookups need.
 local config = require("ado.config")
 local core_session = require("ado.core.session")
+local progress = require("ado.nvim.progress")
 local transport = require("ado.core.transport")
 local write_guard = require("ado.core.write_guard")
 
 local M = {}
 
 local current
+local muted = 0
 
 local function notify(msg, level)
   vim.notify("[ado] " .. msg, level or vim.log.levels.INFO)
@@ -20,19 +22,25 @@ local function on_event(event)
     if #event.fallback > 0 then
       msg = msg .. "; states fetched per type for " .. table.concat(event.fallback, ", ")
     end
-    notify(msg)
+    progress.echo(msg)
+  elseif event.kind == "unknown_types" then
+    local quoted = {}
+    for _, name in ipairs(event.unknown) do table.insert(quoted, "'" .. name .. "'") end
+    notify(string.format("types configured for project %s that it does not have: %s; its types are %s",
+      event.project, table.concat(quoted, ", "), table.concat(event.valid, ", ")), vim.log.levels.WARN)
   end
 end
 
 -- Every transport failure is reported once here, so call sites only decide
--- what to do next.
+-- what to do next, except while errors are muted. A conflict is left to the
+-- caller, which knows the rev it expected and how the user can recover.
 local function notify_errors(t)
   local wrapped = {}
   for name, fn in pairs(t) do
     if type(fn) == "function" then
       wrapped[name] = function(params, cb)
         fn(params, function(err, result)
-          if err then notify(err.message, vim.log.levels.ERROR) end
+          if err and err.kind ~= "conflict" and muted == 0 then notify(err.message, vim.log.levels.ERROR) end
           cb(err, result)
         end)
       end
@@ -56,15 +64,24 @@ function M.get()
       project = c.project,
       query_top = c.default_query_top,
       open_categories = c.open_categories,
+      default_types = c.default_types,
       on_event = on_event,
     })
   end
   return current
 end
 
+-- A save reports its failure in its own report, so it mutes the
+-- notifications of transport failures while it applies; calls pair
+-- mute_errors(true) with mute_errors(false).
+function M.mute_errors(on)
+  muted = math.max(0, muted + (on and 1 or -1))
+end
+
 -- Drops the session so the next get() rebuilds it from config.
 function M.reset()
   current = nil
+  muted = 0
 end
 
 -- Resolve a project (queries and state lookups need one): the configured

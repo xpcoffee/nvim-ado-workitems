@@ -72,7 +72,10 @@ test("<CR> on the title opens a float; confirming writes once and re-renders", f
   key("<CR>")
   eq(vim.api.nvim_get_current_buf(), buf)
   eq(#fake.writes, 1)
-  eq(fake.writes[1].params, { id = 101, fields = { ["System.Title"] = "Write the API" } })
+  eq(fake.writes[1].params, { id = 101, patch = {
+    { op = "test", path = "/rev", value = 1 },
+    { op = "add", path = "/fields/System.Title", value = "Write the API" },
+  } })
   eq(lines(buf)[2], "Title:     Write the API")
   eq(lines(buf)[10], "Rev:       2")
   eq(notes[#notes].msg, "[ado] updated #101")
@@ -86,11 +89,13 @@ test("a remote change blocks the write with the reload warning", function()
   key("<CR>")
   vim.api.nvim_buf_set_lines(0, 0, -1, false, { "Mine" })
   key("<CR>")
-  eq(#fake.writes, 0)
-  eq(notes[#notes], {
+  eq(#fake.writes, 1)
+  ok(fake.writes[1].failed)
+  eq(fake.items[101].fields["System.Title"], "Theirs")
+  eq(notes, { {
     msg = "[ado] #101 changed remotely (rev 1 -> 2); reload (,wr) before saving",
     level = vim.log.levels.WARN,
-  })
+  } })
 end)
 
 test("<leader>wr reloads from ADO", function()
@@ -113,20 +118,86 @@ test("state edit picks from the type's states and writes the choice", function()
   vim.api.nvim_win_set_cursor(0, { 3, 0 })
   key("<CR>")
   eq(offered, { "To Do", "Doing", "Done", "Discarded" })
-  eq(fake.writes[1].params, { id = 101, fields = { ["System.State"] = "Doing" } })
+  eq(fake.writes[1].params.patch[2], { op = "add", path = "/fields/System.State", value = "Doing" })
   eq(lines(buf)[3], "State:     Doing")
 end)
 
 test("a failed write is reported once and leaves the buffer as it was", function()
   local fake, detail, notes = fresh()
   local buf = open(detail, 101)
-  fake:fail_on("update_fields", 1, { kind = "failed", message = "boom" })
+  fake:fail_on("patch_work_item", 1, { kind = "failed", message = "boom" })
   vim.api.nvim_win_set_cursor(0, { 2, 0 })
   key("<CR>")
   vim.api.nvim_buf_set_lines(0, 0, -1, false, { "Changed" })
   key("<CR>")
   eq(lines(buf)[2], "Title:     Write API")
   eq(notes, { { msg = "[ado] boom", level = vim.log.levels.ERROR } })
+end)
+
+-- Opens #103's assignee float, types text and confirms.
+local function edit_assignee(text)
+  local fake, detail, notes = fresh()
+  local buf = open(detail, 103)
+  vim.api.nvim_win_set_cursor(0, { 4, 0 })
+  key("<CR>")
+  eq(lines(vim.api.nvim_get_current_buf()), { "Me Myself <me@example.com>" })
+  vim.api.nvim_buf_set_lines(0, 0, -1, false, { text })
+  key("<CR>")
+  return fake, buf, notes
+end
+
+local function ops(fake)
+  local out = {}
+  for _, c in ipairs(fake.calls) do table.insert(out, c.op) end
+  return out
+end
+
+test("an assignee in the Name <email> form is sent as the email, without a lookup", function()
+  local fake, buf = edit_assignee("Alex Smith <alex.smith@example.com>")
+  eq(ops(fake), { "get_work_item", "patch_work_item" })
+  eq(fake.writes[1].params.patch[2], { op = "add", path = "/fields/System.AssignedTo", value = "alex.smith@example.com" })
+  eq(lines(buf)[4], "Assignee:  Alex Smith <alex.smith@example.com>")
+end)
+
+test("an assignee text with one match is resolved to that identity's email", function()
+  local fake, buf = edit_assignee("alex s")
+  eq(ops(fake), { "get_work_item", "resolve_identity", "patch_work_item" })
+  eq(fake.writes[1].params.patch[2], { op = "add", path = "/fields/System.AssignedTo", value = "alex.smith@example.com" })
+  eq(lines(buf)[4], "Assignee:  Alex Smith <alex.smith@example.com>")
+end)
+
+test("an ambiguous assignee text warns with the matches and writes nothing", function()
+  local fake, buf, notes = edit_assignee("alex")
+  eq(#fake.writes, 0)
+  eq(notes, { { msg = "[ado] assignee not changed: 'alex' matches 2 identities (Alex Smith <alex.smith@example.com>,"
+    .. " Alex Jones <alex.jones@example.com>); type more of the name, or the email", level = vim.log.levels.WARN } })
+  eq(lines(buf)[4], "Assignee:  Me Myself <me@example.com>")
+end)
+
+test("an assignee text with no match warns and writes nothing", function()
+  local fake, _, notes = edit_assignee("nobody")
+  eq(#fake.writes, 0)
+  eq(notes, { { msg = "[ado] assignee not changed: no ADO identity matches 'nobody'; type a name or email that"
+    .. " matches one person", level = vim.log.levels.WARN } })
+end)
+
+test("an empty assignee unassigns without a lookup", function()
+  local fake, buf = edit_assignee("")
+  eq(ops(fake), { "get_work_item", "patch_work_item" })
+  eq(fake.writes[1].params.patch[2], { op = "add", path = "/fields/System.AssignedTo", value = "" })
+  eq(lines(buf)[4], "Assignee:  ")
+end)
+
+test("a description edit goes in the same rev-guarded patch", function()
+  local fake, detail = fresh()
+  open(detail, 103)
+  key("<leader>we")
+  vim.api.nvim_buf_set_lines(0, 0, -1, false, { "New body" })
+  key("<C-s>")
+  eq(fake.writes[1].params, { id = 103, patch = {
+    { op = "test", path = "/rev", value = 1 },
+    { op = "add", path = "/fields/System.Description", value = "New body" },
+  } })
 end)
 
 test("<leader>wc adds a comment", function()

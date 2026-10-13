@@ -71,20 +71,40 @@ test("update_if_unchanged writes when the rev matches", function()
     end)
   end)
   eq(#fake.writes, 1)
-  eq(fake.writes[1].params, { id = 101, fields = { ["System.Title"] = "Write the API" } })
+  eq(fake.writes[1].params, { id = 101, patch = {
+    { op = "test", path = "/rev", value = 1 },
+    { op = "add", path = "/fields/System.Title", value = "Write the API" },
+  } })
 end)
 
-test("update_if_unchanged refuses with a conflict and no write after a remote edit", function()
+test("update_if_unchanged sends one patch that ADO refuses whole after a remote edit", function()
   local s, fake = new()
   local item
   s:get(101, function(_, it) item = it end)
   fake:edit_remotely(101, { ["System.State"] = "Doing" })
-  s:update_if_unchanged(item, { title = "Mine" }, function(err)
-    eq(err.kind, "conflict")
-    eq(err.expected_rev, 1)
-    eq(err.actual_rev, 2)
-  end)
-  eq(#fake.writes, 0)
+  local got
+  s:update_if_unchanged(item, { title = "Mine", tags = "a" }, function(err) got = err end)
+  eq(got.kind, "conflict")
+  eq(got.message, "#101 changed remotely (rev 1 -> 2)")
+  eq(got.expected_rev, 1)
+  eq(got.actual_rev, 2)
+  eq(#fake.writes, 1)
+  ok(fake.writes[1].failed)
+  eq(fake.items[101].fields["System.Title"], "Write API")
+  eq(fake.items[101].rev, 2)
+  eq(#fake.calls, 2, "the load and the patch; no read before the write")
+end)
+
+test("update_if_unchanged replaces tags and sets every other field with add", function()
+  local s, fake = new()
+  local item
+  s:get(101, function(_, it) item = it end)
+  s:update_if_unchanged(item, { tags = "x", state = "Doing" }, function(err) eq(err, nil) end)
+  eq(fake.writes[1].params.patch, {
+    { op = "test", path = "/rev", value = 1 },
+    { op = "add", path = "/fields/System.State", value = "Doing" },
+    { op = "replace", path = "/fields/System.Tags", value = "x" },
+  })
 end)
 
 test("add_comment returns the updated item", function()
