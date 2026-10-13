@@ -27,7 +27,7 @@ end
 
 -- Every open view buffer: { buf, mod, name }.
 local function views()
-  local mods = { require("ado.nvim.area_view"), require("ado.nvim.item_view") }
+  local mods = { require("ado.nvim.area_view"), require("ado.nvim.query_view"), require("ado.nvim.item_view") }
   local out = {}
   for _, buf in ipairs(vim.api.nvim_list_bufs()) do
     for _, mod in ipairs(mods) do

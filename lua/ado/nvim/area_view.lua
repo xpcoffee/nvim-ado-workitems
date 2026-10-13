@@ -4,6 +4,7 @@
 -- nvim/layout.lua picks the window and records the history (R4.1).
 local area_path = require("ado.core.area_path")
 local core = require("ado.core.area_view")
+local filters = require("ado.nvim.filters")
 local keymaps = require("ado.nvim.keymaps")
 local layout = require("ado.nvim.layout")
 local lines = require("ado.nvim.lines")
@@ -103,7 +104,7 @@ function actions.select()
   if row.kind == "area" then
     M.open(core.select(entry.view, row.row))
   else
-    layout.open_item_from_area(row.row.id)
+    layout.open_item_from_list(row.row.id)
   end
 end
 
@@ -129,60 +130,13 @@ function actions.reload()
   view_buffer.confirm_discard(buf, function() M.load(buf) end)
 end
 
-local function split_list(text)
-  local out = {}
-  for part in (text or ""):gmatch("[^,]+") do
-    local v = part:match("^%s*(.-)%s*$")
-    if v ~= "" then table.insert(out, v) end
-  end
-  return out
-end
-
-local FILTER_PROMPTS = {
-  state = "State (open, all, or names separated by commas): ",
-  assignee = "Assignee (empty for anyone, @Me, or a name or email): ",
-  types = "Types (empty for every type, or names separated by commas): ",
-  tag = "Tag (empty for any, or one whole tag): ",
-}
-
-local function current_text(f, key)
-  local v = f[key]
-  if type(v) == "table" then return table.concat(v, ", ") end
-  return v or ""
-end
-
 function actions.filters()
   local _, entry = current()
   if not entry then return end
   local loc = entry.location
-  local choices = { "state", "assignee", "types", "tag", "reset to defaults" }
-  vim.ui.select(choices, { prompt = "Filter" }, function(key)
-    if not key then return end
-    if key == "reset to defaults" then
-      return M.open(location.area(loc.path, require("ado.config").get().area_filters, loc.sub))
-    end
-    vim.ui.input({ prompt = FILTER_PROMPTS[key], default = current_text(loc.filters, key) }, function(text)
-      if text == nil then return end
-      local value
-      if key == "state" then
-        local t = text:match("^%s*(.-)%s*$"):lower()
-        if t == "" or t == "open" then
-          value = "open"
-        elseif t == "all" then
-          value = "all"
-        else
-          value = split_list(text)
-        end
-      elseif key == "types" then
-        value = split_list(text)
-        if #value == 0 then value = false end
-      else
-        value = text:match("^%s*(.-)%s*$")
-        if value == "" then value = false end
-      end
-      M.open(location.with_filters(loc, { [key] = value }))
-    end)
-  end)
+  filters.choose(loc, { "state", "assignee", "types", "tag" }, function()
+    return location.area(loc.path, require("ado.config").get().area_filters, loc.sub)
+  end, M.open)
 end
 
 function actions.browser()

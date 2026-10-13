@@ -5,12 +5,14 @@
 -- item. Deleting a row removes that relationship, pasting adds one, and
 -- deleting and pasting the same item in one save moves it (R5 table).
 --
---   view = { key = buffer name, kind = "area" | "item",
+--   view = { key = buffer name, kind = "area" | "item" | "query",
 --            state_filter = "open" | "all" | { state name... },
 --            snapshot = { row... },   rows displayed at the last load
 --            current  = { row... } }  rows read from the buffer now
 --     area views add rel = area path (field form), filters = the location's
 --            filters (core/location.lua), for R5.13
+--     query lists add filters, for R5.13; their rows stand for no
+--            relationship (R9.4)
 --     item views add rel = item id, item = { id, rev, area, project, parent },
 --            link_names = { [rel] = display name },
 --            known = { links = { [rel] = { id... } } }, every link loaded,
@@ -178,12 +180,14 @@ end
 --
 -- Regions of an item view, in R3.1 order: "self" (the item's own lines),
 -- "parent", "arearow" (the area row, read-only), "children", and
--- "link:<rel>" per link section. An area view is one region, "area". The
+-- "link:<rel>" per link section. An area view is one region, "area", and a
+-- query list one region, "query". The
 -- fixed rows (the item's own lines, the area row, headings, sub-area rows)
 -- mark where each region starts, so a row belongs to the region of the
 -- fixed row above it.
 
 local function is_fixed(view, s)
+  if view.kind == "query" then return false end
   if view.kind == "area" then return s.kind == "area" end
   return s.kind ~= "item" or s.slot == "self"
 end
@@ -198,7 +202,7 @@ local function region_after(s)
 end
 
 local function snapshot_region(view, s)
-  if view.kind == "area" then return "area" end
+  if view.kind ~= "item" then return view.kind end
   if s.slot == "parent" then return "parent" end
   if s.slot == "child" then return "children" end
   return "link:" .. tostring(s.rel)
@@ -227,7 +231,7 @@ local function classify(view, reject)
     if is_fixed(view, s) then table.insert(fixed_order, s.row_id) end
   end
   local out = { fixed = {}, rows = {}, new_lines = {}, removed = {} }
-  local region = view.kind == "area" and "area" or "self"
+  local region = view.kind == "item" and "self" or view.kind
   local seen_fixed, fixed_seq, in_place = {}, {}, {}
 
   for _, c in ipairs(view.current) do
@@ -449,7 +453,7 @@ local function hidden_by(view, slot, v, catalog, me)
     for _, st in ipairs(f) do if same_text(st, v.state) then shown = true end end
     if not shown then return "the view's state filter hides " .. v.state end
   end
-  local filters = view.kind == "area" and view.filters or {}
+  local filters = view.kind ~= "item" and view.filters or {}
   if filters.types then
     local shown = false
     for _, t in ipairs(filters.types) do if same_text(t, v.type) then shown = true end end
@@ -695,6 +699,9 @@ function M.compute(views, prepared)
 
   -- ── collect the relationship changes ──────────────────────────────────────
   local area_rem, area_add = {}, {}
+  -- query_rem[id] = { { view, s }... }: rows cut from query lists (R9.6).
+  -- pasted[id]: the item was pasted somewhere, whatever the paste does.
+  local query_rem, pasted = {}, {}
   -- hier_rem[child][parent] = { key... }; hier_add[child] = { { parent,
   -- view, r, source = "children" | "parent" }... }
   local hier_rem, hier_add, current_parent = {}, {}, {}
@@ -742,6 +749,9 @@ function M.compute(views, prepared)
       if region == "area" then
         area_rem[s.id] = area_rem[s.id] or {}
         table.insert(area_rem[s.id], view)
+      elseif region == "query" then
+        query_rem[s.id] = query_rem[s.id] or {}
+        table.insert(query_rem[s.id], { view = view, s = s })
       elseif region == "parent" then
         hier_removal(view.rel, s.id, view)
       elseif region == "children" then
@@ -767,7 +777,11 @@ function M.compute(views, prepared)
     for _, r in ipairs(out.rows) do
       if not r.in_place then
         local s = r.s
-        if r.region == "area" then
+        pasted[s.id] = true
+        if r.region == "query" then
+          reject(view, r.c.line, s.id, "R9.5", "a query list has no place to put an item: its rows stand for no"
+            .. " relationship. Paste the row into an area view or an item view instead, or delete the line")
+        elseif r.region == "area" then
           area_add[s.id] = area_add[s.id] or {}
           table.insert(area_add[s.id], { view = view, r = r })
         elseif r.region == "self" then
@@ -791,6 +805,53 @@ function M.compute(views, prepared)
         else
           link_change("add", view, view.rel, r.region:sub(#"link:" + 1), s.id, r)
         end
+      end
+    end
+  end
+
+  -- ── rows cut from query lists (R9.6) ────────────────────────────────────────
+  -- A query list's row stands for no relationship, so its cut pairs with the
+  -- one paste of the item into an area view or a child list, and moves that
+  -- view's relationship: the area, or the parent the row was loaded with.
+  -- Pastes into a parent row or a link section do what they do for a kept
+  -- original.
+  for _, id in ipairs(sorted_keys(query_rem)) do
+    local cuts = query_rem[id]
+    local cut_keys = {}
+    for _, q in ipairs(cuts) do add_unique(cut_keys, q.view.key) end
+    local areas, children = area_add[id] or {}, {}
+    for _, a in ipairs(hier_add[id] or {}) do
+      if a.source == "children" then table.insert(children, a) end
+    end
+    if #areas + #children > 1 then
+      local dest_keys, keys = {}, {}
+      for _, a in ipairs(areas) do add_unique(dest_keys, a.view.key) end
+      for _, a in ipairs(children) do add_unique(dest_keys, a.view.key) end
+      for _, k in ipairs(cut_keys) do add_unique(keys, k) end
+      for _, k in ipairs(dest_keys) do add_unique(keys, k) end
+      reject_item(id, keys, "R5.10", string.format(
+        "#%d was cut from %s and pasted into %d places (%s); which paste is the move would be arbitrary."
+        .. " Keep one paste, or undo the cut", id, table.concat(cut_keys, ", "), #areas + #children,
+        table.concat(dest_keys, ", ")))
+      area_add[id] = nil
+      local kept = {}
+      for _, a in ipairs(hier_add[id] or {}) do
+        if a.source ~= "children" then table.insert(kept, a) end
+      end
+      hier_add[id] = #kept > 0 and kept or nil
+    elseif #areas == 1 then
+      area_rem[id] = area_rem[id] or {}
+      for _, q in ipairs(cuts) do table.insert(area_rem[id], q.view) end
+    elseif #children == 1 then
+      local parent = cuts[1].s.parent
+      if parent then
+        for _, q in ipairs(cuts) do hier_removal(id, parent, q.view) end
+      end
+    elseif not pasted[id] then
+      for _, q in ipairs(cuts) do
+        note("no_change", id, { q.view.key }, "R9.4", string.format(
+          "#%d deleted from %s only: no change, because a query list's rows stand for no relationship;"
+          .. " paste it into an area view or under a parent to move it", id, q.view.key))
       end
     end
   end
@@ -938,7 +999,10 @@ function M.compute(views, prepared)
         area, parent, default = view.item.area, view.rel, default_types.children
       end
       if not area then
-        if n.region == "parent" then
+        if n.region == "query" then
+          bad("R9.5", "a query list has no place to put an item: create new lines in an area view, or under an"
+            .. " item's Children heading")
+        elseif n.region == "parent" then
           bad("R5", "a new line cannot be a parent; paste an existing item's row here instead")
         elseif n.region:sub(1, 5) == "link:" then
           bad("R5", "a new line cannot be linked; create it under Children or in an area view, then paste"
@@ -1179,7 +1243,7 @@ function M.compute(views, prepared)
   -- values after the save.
   local me = {}
   for _, view in ipairs(views) do
-    if view.kind == "area" and view.filters and lower(view.filters.assignee) == "@me" then
+    if view.kind ~= "item" and view.filters and lower(view.filters.assignee) == "@me" then
       for _, sr in ipairs(view.snapshot) do
         if sr.kind == "item" and trim(sr.assignee) ~= "" then me[lower(sr.assignee)] = true end
       end

@@ -105,6 +105,26 @@ been loaded too. A truncated view (more items than `default_query_top`)
 keeps the condition for every type, since its loaded items may not show
 every type. A URL still over 3,000 characters is refused with a warning.
 
+## Query lists
+
+A query list shows the work items one fixed query finds, under the area
+view's state, type and tag filters (RFC 0001 R9). One exists: `mine`, the
+items assigned to the user, which `my_items()` opens. The core
+(`core/query_view.lua`) loads it with one `query` across the configured
+projects, plus the type catalog of each project not loaded yet when the
+state filter is "open". As in every list, each project's open condition is
+paired with that project (see "Projects and type catalogs").
+
+A query location is the query's name and its filters
+(`core/location.lua`); the query fixes some filters, and `mine` fixes the
+assignee to `@Me`. Its buffer is `ado://query/mine?state=open&type=&tag=`.
+The browser URL keeps the area view's length rules: for an open-state list
+that is not truncated, each project's open condition covers only the types
+the list loaded from that project.
+
+A query list's rows stand for no relationship, so saving treats them
+differently from area view rows; see "Saving views".
+
 ## Item view
 
 An item view shows one work item: its own row, its parent, its area, its
@@ -130,19 +150,20 @@ already loaded; the history still records the toggle as a step.
 ## Layout and history
 
 `nvim/layout.lua` keeps up to three windows, one per role, stacked top to
-bottom in one column: the area view, the item view panel, then the detail
-split. A role with nothing open has no window, and the open ones share the
+bottom in one column: the list (an area view or a query list), the item
+view panel, then the detail split. A role with nothing open has no window, and the open ones share the
 column's height equally. Selecting an
-item in the area view shows it in the detail split and in the panel, and
+item in a list shows it in the detail split and in the panel, and
 leaves the cursor in the panel. `K` in the panel shows the item under the
 cursor in the detail split without moving the cursor; `gd` moves to it.
 `<leader>wi` in a detail buffer opens the panel above it.
 
 A role reuses its window while that window is in the current tab and still
 shows a buffer of that role, so a window the user has put another buffer
-in is left alone and a new split is made. Area and item locations share one
-history (`layout.history`); back and forward show each location in its
-role's window.
+in is left alone and a new split is made. Area, query and item locations
+share one history (`layout.history`); back and forward show each location
+in its role's window. `toggle_area_view()` closes the list window, or
+reopens the list it showed last, area view or query list.
 
 ## Saving views
 
@@ -158,6 +179,17 @@ pasting and moving rows changes relationships:
 | Paste, original kept | copy in this area | copy under this parent, or add the parent if the item has none | set the parent if the item has none, else reject | add the link |
 | Delete and paste | change the area | change the parent | change the parent | move the link |
 | New line | create in this area | create under this parent, in its area | reject | reject |
+
+A query list's rows stand for no relationship (RFC 0001 R9.4 to R9.7).
+Their column edits save as in the other views. Deleting one with no paste
+anywhere is "no change", and pasting a row or adding a line in a query
+list rejects the save. A row cut from a query list pairs with the one
+paste of that item into an area view or a child list, and moves that
+view's relationship: the area, or the parent from the one the row was
+loaded with (the rows select `System.Parent`). A paste into a parent row
+or a link section does what it does when the original is kept. More than
+one such paste of one cut rejects (R5.10). A yanked row is a copy, as from
+any view.
 
 Lines keep their identity through yank, delete and put, because each line
 starts with a concealed row ID and the registry maps it to the row it

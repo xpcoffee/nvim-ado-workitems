@@ -55,10 +55,35 @@ require("ado").setup({
 })
 ```
 
+## My work items
+
+`require("ado").my_items()` lists the open work items assigned to you, in
+the configured projects, as rows of type, state, title, assignee and tags.
+It is an editable list like the area view, in the same window above the
+item view, named `ado://query/mine?state=open&type=&tag=`. It has the area
+view's keys except the two that need an area (`-` for the parent area,
+`<leader>wu` for sub-area items): `<CR>` opens the item in the
+detail split and the item view, `[h` / `]h` walk the shared history,
+`<leader>wf` sets the state, type or tag filter (the assignee is always
+you), `<leader>wb` opens the query in the browser and `<leader>wr`
+reloads.
+
+Edit its columns and save with `:w`, as in the other views. Its rows stand
+for no relationship, so:
+
+- deleting a row, and pasting it nowhere, changes nothing;
+- pasting a row or typing a new line in it is rejected;
+- a row deleted from it and put into an area view moves the item to that
+  area, and put under an item's Children heading moves the item under that
+  parent;
+- a row yanked from it and put elsewhere is a copy, as from any view.
+
 ## Toggling the views
 
-`require("ado").toggle_area_view()` closes the area view, or reopens the
-last area shown, or asks for an area when none has been shown.
+`require("ado").toggle_area_view()` closes the top window, which holds the
+area view or the "my work items" list, or reopens the list it showed last,
+or asks for an area when none has been shown. The top window shows one
+list at a time: opening "my work items" or an area view replaces the other.
 `require("ado").toggle_item_view()` closes the item view, or opens it for
 the work item in the current detail buffer, or reopens the last item shown,
 or asks for an ID. `<leader>wi` in a detail buffer toggles the item view the
@@ -136,13 +161,13 @@ Global (wired by the dotfiles spec): `require("ado").my_items()` / `.search()` /
 In a work-item buffer: `<CR>`/`i` edit field under cursor · `,wc` comment ·
 `,wS` state · `,we` description · `,wb` browser · `,wr` reload · `,wi` item view.
 
-In a picker: `<CR>` open · `<C-s>` change state · `<C-y>` yank id+url · `<C-o>` browser.
-In the search picker, `<C-a>` re-runs the search in every state, and back.
+In the search picker: `<CR>` open · `<C-s>` change state · `<C-y>` yank id+url ·
+`<C-o>` browser · `<C-a>` re-runs the search in every state, and back.
 
 ## Notes
 
-- "My work items" and search cover only the configured projects, and show
-  only items in an open state: a state whose category is in
+- "My work items" and search cover only the configured projects, and by
+  default show only items in an open state: a state whose category is in
   `open_categories`. Categories come from each project's work item types,
   loaded the first time a list needs them (one `az` call per project,
   reported in `:messages`), so custom states such as `Discarded` need no

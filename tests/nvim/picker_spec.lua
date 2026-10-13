@@ -1,5 +1,6 @@
--- The telescope pickers on the fake transport. Telescope is stubbed, so the
--- spec checks what the plugin hands it: titles, items and the <C-a> toggle.
+-- The telescope search picker on the fake transport. Telescope is stubbed,
+-- so the spec checks what the plugin hands it: titles, items and the <C-a>
+-- toggle. "My work items" is a query list (query_view_spec.lua).
 local Fake = require("tests.support.fake_transport")
 local seed = require("tests.fixtures.seed")
 
@@ -60,15 +61,6 @@ local SEARCH_ITEMS = {
   { id = 2, type = "Task", title = "Login done", state = "Done", area = "P\\Team" },
 }
 
-test("my work items lists only open items", function()
-  local picker = fresh()
-  picker.my_items()
-  eq(#opened, 1)
-  eq(opened[1].title, "My work items")
-  eq(ids(opened[1].results), { 100, 101, 103, 112 })
-  eq(opened[1].maps["<C-a>"], nil)
-end)
-
 test("search shows open items; <C-a> re-runs it in every state and back", function()
   local picker, fake = fresh(SEARCH_ITEMS)
   answer("login")
@@ -101,10 +93,11 @@ test("a search with only closed matches opens an empty picker so <C-a> can widen
   eq(ids(opened[2].results), { 2 })
 end)
 
--- <C-s> on #101 (a Task) in "My work items", choosing state.
+-- <C-s> on #101 (a Task) in the search for "write", choosing state.
 local function change_state(fake, state)
   local picker = require("ado.nvim.picker")
-  picker.my_items()
+  answer("write")
+  picker.search()
   local item
   for _, it in ipairs(opened[1].results) do if it.id == 101 then item = it end end
   package.loaded["telescope.actions.state"].get_selected_entry = function() return { value = item } end

@@ -25,7 +25,8 @@ function M.fresh(opts)
   for k, v in pairs(opts) do if k ~= "seed" then c[k] = v end end
   require("ado.config").setup(c)
   require("ado.nvim.session").reset()
-  for _, m in ipairs({ "ado.nvim.area_view", "ado.nvim.item_view", "ado.nvim.layout", "ado.nvim.save" }) do
+  for _, m in ipairs({ "ado.nvim.area_view", "ado.nvim.query_view", "ado.nvim.item_view", "ado.nvim.layout",
+    "ado.nvim.save" }) do
     package.loaded[m] = nil
   end
   vim.fn.executable = function(name)
@@ -37,6 +38,7 @@ function M.fresh(opts)
   require("ado.nvim.progress").echo = function(msg) table.insert(env.echoes, msg) end
   vim.ui.open = function(url) table.insert(env.urls, url) end
   env.area_view = require("ado.nvim.area_view")
+  env.query_view = require("ado.nvim.query_view")
   env.item_view = require("ado.nvim.item_view")
   env.layout = require("ado.nvim.layout")
   return env

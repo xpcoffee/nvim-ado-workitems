@@ -17,6 +17,19 @@ function M.area(buf, actions)
   k("<leader>wr", actions.reload, "reload")
 end
 
+-- actions: select, back, forward, filters, browser, reload
+function M.query(buf, actions)
+  local function k(lhs, fn, desc)
+    vim.keymap.set("n", lhs, fn, { buffer = buf, desc = "ado: " .. desc, remap = false, nowait = true })
+  end
+  k("<CR>", actions.select, "open the work item")
+  k("[h", actions.back, "history back")
+  k("]h", actions.forward, "history forward")
+  k("<leader>wf", actions.filters, "choose filters")
+  k("<leader>wb", actions.browser, "open the query in the browser")
+  k("<leader>wr", actions.reload, "reload")
+end
+
 -- actions: select, back, forward, expand, preview, detail, toggle_all,
 -- browser, reload
 function M.item(buf, actions)

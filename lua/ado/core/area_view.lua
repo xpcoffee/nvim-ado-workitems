@@ -8,6 +8,7 @@
 --        | { kind = "item", id, rev, type, state, assignee, tags, title }
 local area_path = require("ado.core.area_path")
 local location = require("ado.core.location")
+local query = require("ado.core.query")
 local transport = require("ado.core.transport")
 local urls = require("ado.core.urls")
 local wiql = require("ado.core.wiql")
@@ -22,10 +23,6 @@ local BROWSER_FIELDS = {
   "System.AssignedTo", "System.Tags", "System.AreaPath",
 }
 
-local function is_me(assignee)
-  return type(assignee) == "string" and assignee:lower() == "@me"
-end
-
 -- catalog: the area's project catalog, required when the state filter is
 -- "open". opts.open_types limits the open condition to those types.
 function M.spec(loc, catalog, opts)
@@ -35,24 +32,8 @@ function M.spec(loc, catalog, opts)
     { field = "System.TeamProject", op = "IN", value = { area_path.project(loc.path) } },
     { field = "System.AreaPath", op = loc.sub and "UNDER" or "=", value = loc.path },
   }
-  if f.state == "open" then
-    table.insert(conds, catalog:open_condition(opts.open_types or f.types))
-  else
-    if type(f.state) == "table" then
-      table.insert(conds, { field = "System.State", op = "IN", value = f.state })
-    end
-    if f.types then
-      table.insert(conds, { field = "System.WorkItemType", op = "IN", value = f.types })
-    end
-  end
-  if is_me(f.assignee) then
-    table.insert(conds, { field = "System.AssignedTo", op = "=", value = { macro = "Me" } })
-  elseif f.assignee then
-    table.insert(conds, { field = "System.AssignedTo", op = "=", value = f.assignee })
-  end
-  if f.tag then
-    table.insert(conds, { field = "System.Tags", op = "CONTAINS", value = f.tag })
-  end
+  local open = f.state == "open" and catalog:open_condition(opts.open_types or f.types) or nil
+  for _, c in ipairs(query.filter_conditions(f, open)) do table.insert(conds, c) end
   return {
     select = opts.select or M.FIELDS,
     where = { all = conds },

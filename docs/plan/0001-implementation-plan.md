@@ -534,6 +534,18 @@ Recorded 2026-10-13.
 
 - **Detail and picker edits use the save's write route.** A field edit from the detail buffer (title, state, assignee, tags, iteration, and the description, converted from markdown to HTML with pandoc) and the picker's state change send one JSON Patch per edit through `patch_work_item`, led by `test /rev` at the rev the item was loaded at, instead of reading the rev and then writing through `update_fields`. A failed rev test changes nothing and shows the "changed remotely" warning. A detail assignee edit resolves the typed text as a save does (R5.19) and writes only on exactly one match; `Name <email>` uses the email and an empty text unassigns. Comments (`add_comment`) stay on `az boards work-item update --discussion` without a rev check, because a comment only appends to the discussion. `update_fields` is removed from the transport, the write guard and the fake. Closes risk 2 for detail edits. Delivered the same day (`docs/architecture.md`, "Write requests").
 
+Recorded 2026-10-13, owner request.
+
+- **"My work items" is a query list.** `require("ado").my_items()` opens an editable list of the open items assigned to the user, `ado://query/mine?state=open&type=&tag=`, in the window the area view uses, instead of the Telescope picker. RFC 0001 R9 sets the requirements and acceptance behaviours 31 to 41. The owner set the editing rules: rows stand for no relationship; column edits save; a delete with no paste is "no change"; a paste into the list is rejected; a row cut from the list and pasted into an area view or a child list moves that relationship (area, or parent from the one the row was loaded with); a yanked row is a copy; every other R5 rule applies. The core (`core/query_view.lua`, `core/plan.lua`) has a test for each behaviour. The Telescope picker stays for `search()`, with `<C-s>`, `<C-y>` and `<C-o>`, which the search picker still uses; the picker's `my_items` path is removed. Delivered the same day.
+  - Decisions the implementation made, low risk and reversible, for the owner to confirm or correct:
+    - One toggle. The layout's top window is one role, "list", that an area view or a query list fills. `toggle_area_view()` (`<leader>wa` in the dotfiles) closes it, or reopens whichever list it showed last, or asks for an area when none has been shown. A second toggle was not added, because both lists share one window and a second key would only choose which list to reopen.
+    - The default filters of "mine" are the open state and no type or tag filter. They do not follow `area_filters`, which may set an assignee that "mine" fixes.
+    - The buffer name leaves out the assignee, since "mine" fixes it; the window bar shows `assignee: @Me`.
+    - A row cut from the list and pasted into a parent row or a link section does what that paste does when the original is kept: it sets the parent or adds the link, and the cut is not listed as "no change".
+    - One cut pasted into more than one area view or child list is rejected (owner decision); the implementation extends it to the case where another view also had the item cut, rather than pairing cuts with pastes. This can reject an edit that has one reasonable reading; reload and save in two steps instead.
+    - `Session:my_items()` now returns the rows of the default "mine" list, so "my work items" has one definition; its RFC 0002 tests still pass unchanged.
+  - Real-data check, 2026-10-13, read-only, through the `az` transport against the `example-org` organisation with `projects = { Example }` and the write guard on: `my_items()` headless loaded the list with 2 calls (the Example type catalog, then one query), 31 rows, not truncated, in 4 distinct states (Active, Exploration, New, Planning). Its browser URL was 1,228 characters, under the 3,000 limit. Editing was tested on the fake transport only.
+
 ## 9. Dotfiles changes
 
 For `lua/plugins/ado.lua`, described here and not applied. lazy.nvim loads the plugin from `~/src/nvim-ado-workitems` (`dev = true`), so each phase reaches the owner's editor only once it is merged to `main` there.
@@ -576,5 +588,7 @@ After phase 5, add the default types (the types themselves are in `projects` sin
 -- in setup():
 default_types = { area = "Task", children = "Task" },  -- owner decision, section 8
 ```
+
+After the query list (2026-10-13), no change is needed: `<leader>wm` already calls `ado.my_items`, which now opens the list, and `<leader>wa`, bound to `ado.toggle_area_view`, toggles whichever list the top window showed last. The description "Toggle area view" may become "Toggle list view".
 
 `<leader>wa` and `<leader>wi` are free in the global `<leader>w` group (`wm`, `ws`, `wo` are taken). In a detail buffer the plugin's buffer-local `<leader>wi` opens the item view for that buffer's item instead of prompting. The `telescope.nvim` and `plenary.nvim` dependencies stay, for the pickers.

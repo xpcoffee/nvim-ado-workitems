@@ -2,7 +2,9 @@
 -- a type catalog per project. Presentation code calls the core through these
 -- methods; every callback is cb(err, result).
 local area_path = require("ado.core.area_path")
+local location = require("ado.core.location")
 local query = require("ado.core.query")
+local query_view = require("ado.core.query_view")
 local requests = require("ado.core.requests")
 local transport = require("ado.core.transport")
 local types = require("ado.core.types")
@@ -298,11 +300,13 @@ function Session:states(wtype, project, cb)
   end)
 end
 
--- Items assigned to the current user, in an open state (RFC 0002 R1.1).
+-- Items assigned to the current user, in an open state (RFC 0002 R1.1):
+-- the rows of the "mine" query list with its default filters.
+-- cb(err, items, info) as for query().
 function Session:my_items(cb)
-  self:scope(true, function(err, scope)
+  query_view.load(self, location.query("mine"), {}, function(err, view)
     if err then return cb(err) end
-    self:query(query.my_items(scope), cb)
+    cb(nil, view.items, { total = view.total, truncated = view.truncated })
   end)
 end
 

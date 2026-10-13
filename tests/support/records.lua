@@ -9,6 +9,7 @@ local area_view = require("ado.core.area_view")
 local item_view = require("ado.core.item_view")
 local location = require("ado.core.location")
 local plan = require("ado.core.plan")
+local query_view = require("ado.core.query_view")
 local seed = require("tests.fixtures.seed")
 local session = require("ado.core.session")
 
@@ -77,6 +78,14 @@ function M.area(s, path, filters)
   area_view.load(s, loc, {}, function(err, v) assert(not err, err and err.message) view = v end)
   return M.record("ado://area/" .. path:gsub("\\", "/"), "area", loc.filters.state, view.rows,
     { rel = loc.path, filters = loc.filters })
+end
+
+-- A query list, "mine" unless name is given.
+function M.query(s, filters, name)
+  local loc = location.query(name or "mine", filters)
+  local view
+  query_view.load(s, loc, {}, function(err, v) assert(not err, err and err.message) view = v end)
+  return M.record(location.uri(loc), "query", loc.filters.state, view.rows, { filters = loc.filters })
 end
 
 -- opts.all: every state; opts.expand: child IDs to expand, in order.

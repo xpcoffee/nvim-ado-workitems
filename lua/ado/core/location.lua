@@ -2,14 +2,17 @@
 -- a URI (R4.5):
 --
 --   ado://area/Project/Team?state=open&type=Task,Bug&assignee=@Me&tag=api&sub=0
+--   ado://query/mine?state=open&type=Task,Bug&tag=api
 --   ado://item/1234?all=0
 --
--- An area URI is also its buffer name. An item view's buffer is named
+-- An area or query URI is also its buffer name. An item view's buffer is named
 -- ado://item/1234 for every value of `all`, because the show-all toggle
 -- filters rows already loaded and needs no other buffer or fetch.
 --
 --   location = { kind = "area", path = "Project\\Team" (field form),
 --                filters = { state, assignee, types, tag }, sub = bool }
+--            | { kind = "query", name = "mine" (a key of M.QUERIES),
+--                filters = { state, assignee, types, tag } }
 --            | { kind = "item", id = 1234, all = bool }
 --   all               false: children and links in an open state only (R3.8)
 --   filters.state     "open" | "all" | { state name... }
@@ -32,8 +35,7 @@ local function blank(s)
   return s == nil or (type(s) == "string" and not s:find("%S"))
 end
 
--- filters may be partial or nil; missing entries take the defaults.
-function M.area(path, filters, sub)
+local function normalise_filters(filters)
   filters = filters or {}
   local state = filters.state
   if type(state) == "table" then
@@ -44,16 +46,32 @@ function M.area(path, filters, sub)
   local types = copy_list(filters.types)
   if types and #types == 0 then types = nil end
   return {
-    kind = "area",
-    path = area_path.normalise(path),
-    filters = {
-      state = state,
-      assignee = not blank(filters.assignee) and filters.assignee or nil,
-      types = types,
-      tag = not blank(filters.tag) and filters.tag or nil,
-    },
-    sub = sub == true,
+    state = state,
+    assignee = not blank(filters.assignee) and filters.assignee or nil,
+    types = types,
+    tag = not blank(filters.tag) and filters.tag or nil,
   }
+end
+
+-- filters may be partial or nil; missing entries take the defaults.
+function M.area(path, filters, sub)
+  return { kind = "area", path = area_path.normalise(path), filters = normalise_filters(filters), sub = sub == true }
+end
+
+-- The query lists (RFC 0001 R9), by name: the title the window bar shows,
+-- and the filters the list fixes, which its location always holds.
+M.QUERIES = {
+  mine = { title = "My work items", fixed = { assignee = "@Me" } },
+}
+
+-- nil when name is not a key of M.QUERIES. filters as for M.area; the
+-- query's fixed filters replace what it gives for them.
+function M.query(name, filters)
+  local q = M.QUERIES[name]
+  if not q then return nil end
+  local f = normalise_filters(filters)
+  for k, v in pairs(q.fixed) do f[k] = v end
+  return { kind = "query", name = name, filters = f }
 end
 
 -- nil when id is not a positive whole number.
@@ -78,6 +96,7 @@ function M.with_filters(loc, changes)
   for k, v in pairs(changes) do
     if v == false then f[k] = nil else f[k] = v end
   end
+  if loc.kind == "query" then return M.query(loc.name, f) end
   return M.area(loc.path, f, loc.sub)
 end
 
@@ -112,6 +131,10 @@ function M.uri(loc)
   end
   local f = loc.filters
   local state = type(f.state) == "table" and encode_list(f.state) or f.state
+  if loc.kind == "query" then
+    return string.format("ado://query/%s?state=%s&type=%s&tag=%s", encode(loc.name), state,
+      encode_list(f.types), f.tag and encode(f.tag) or "")
+  end
   local segs = area_path.segments(loc.path)
   for i, seg in ipairs(segs) do segs[i] = encode(seg) end
   return string.format("ado://area/%s?state=%s&type=%s&assignee=%s&tag=%s&sub=%d",
@@ -124,17 +147,28 @@ function M.buffer_name(loc)
   return M.uri(loc)
 end
 
--- The location a URI or buffer name encodes, or nil when it is neither an
--- area nor an item URI.
-function M.parse(uri)
-  local id, flags = tostring(uri):match("^ado://item/(%d+)%??(.*)$")
-  if id then return M.item(id, flags:match("all=1") ~= nil) end
-  local path, query = tostring(uri):match("^ado://area/([^?]+)%??(.*)$")
-  if not path then return nil end
+local function params_of(query)
   local params = {}
   for key, value in query:gmatch("([^&=]+)=([^&]*)") do params[key] = value end
   local state = params.state or "open"
   if state ~= "open" and state ~= "all" then state = decode_list(state) end
+  return params, state
+end
+
+-- The location a URI or buffer name encodes, or nil when it is not an
+-- area, query or item URI.
+function M.parse(uri)
+  local id, flags = tostring(uri):match("^ado://item/(%d+)%??(.*)$")
+  if id then return M.item(id, flags:match("all=1") ~= nil) end
+  local name, rest = tostring(uri):match("^ado://query/([^?]+)%??(.*)$")
+  if name then
+    local params, state = params_of(rest)
+    return M.query(decode(name), { state = state, types = decode_list(params.type or ""),
+      tag = params.tag and decode(params.tag) or nil })
+  end
+  local path, query = tostring(uri):match("^ado://area/([^?]+)%??(.*)$")
+  if not path then return nil end
+  local params, state = params_of(query)
   local segs = {}
   for seg in path:gmatch("[^/]+") do table.insert(segs, decode(seg)) end
   return M.area(table.concat(segs, "\\"), {
@@ -157,8 +191,8 @@ function M.describe(loc)
     "assignee: " .. (f.assignee or "any"),
     "type: " .. (f.types and table.concat(f.types, ", ") or "any"),
     "tag: " .. (f.tag or "any"),
-    loc.sub and "sub-areas: included" or "sub-areas: excluded",
   }
+  if loc.kind == "area" then table.insert(parts, loc.sub and "sub-areas: included" or "sub-areas: excluded") end
   return table.concat(parts, "  ·  ")
 end
 

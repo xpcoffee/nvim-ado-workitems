@@ -1,5 +1,6 @@
--- Telescope pickers for work-item lists. A WIQL query returns full work items in
--- one call, so a static table finder is correct (no async job / batch fetch).
+-- The Telescope picker for text search. A WIQL query returns full work items
+-- in one call, so a static table finder is correct (no async job / batch
+-- fetch).
 local pickers = require("telescope.pickers")
 local finders = require("telescope.finders")
 local conf = require("telescope.config").values
@@ -96,20 +97,6 @@ local function open_picker(title, items, opts)
       return true
     end,
   }):find()
-end
-
-function M.my_items()
-  session.ensure_project(function(ok)
-    if not ok then return end
-    session.get():my_items(function(err, items)
-      if err then return end
-      if #items == 0 then
-        vim.notify("[ado] no open items assigned to you", vim.log.levels.INFO)
-        return
-      end
-      open_picker("My work items", items)
-    end)
-  end)
 end
 
 local function run_search(text, all_states)

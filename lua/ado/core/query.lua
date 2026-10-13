@@ -56,12 +56,47 @@ function M.scope(names, opens)
   return { all = conds }
 end
 
+-- Items matching every condition in conds and scope, newest first.
+-- select: the fields to hydrate, default M.FIELDS.
+function M.list(conds, scope, select)
+  local all = {}
+  for _, c in ipairs(conds) do table.insert(all, c) end
+  return { select = select or M.FIELDS, where = where(all, scope), order_by = NEWEST_FIRST }
+end
+
+local function is_me(assignee)
+  return type(assignee) == "string" and assignee:lower() == "@me"
+end
+
+-- The conditions for a location's filters (core/location.lua). open: the
+-- open-state condition, used when filters.state is "open", or nil when the
+-- caller puts it in the scope instead. It already limits the types, so
+-- filters.types adds no condition then.
+function M.filter_conditions(f, open)
+  local conds = {}
+  if f.state == "open" then
+    if open then table.insert(conds, open) end
+  else
+    if type(f.state) == "table" then
+      table.insert(conds, { field = "System.State", op = "IN", value = f.state })
+    end
+    if f.types then
+      table.insert(conds, { field = "System.WorkItemType", op = "IN", value = f.types })
+    end
+  end
+  if is_me(f.assignee) then
+    table.insert(conds, { field = "System.AssignedTo", op = "=", value = { macro = "Me" } })
+  elseif f.assignee then
+    table.insert(conds, { field = "System.AssignedTo", op = "=", value = f.assignee })
+  end
+  if f.tag then
+    table.insert(conds, { field = "System.Tags", op = "CONTAINS", value = f.tag })
+  end
+  return conds
+end
+
 function M.my_items(scope)
-  return {
-    select = M.FIELDS,
-    where = where({ { field = "System.AssignedTo", op = "=", value = { macro = "Me" } } }, scope),
-    order_by = NEWEST_FIRST,
-  }
+  return M.list({ { field = "System.AssignedTo", op = "=", value = { macro = "Me" } } }, scope)
 end
 
 -- CONTAINS WORDS is word/prefix match over the indexed long-text fields, not

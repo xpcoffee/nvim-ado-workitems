@@ -48,9 +48,10 @@ These terms are used throughout the requirements.
 - **Open state.** A state whose state category is `Proposed` or `InProgress`, as defined in [RFC 0002](0002-open-state-filter.md). ADO assigns every state of every work item type to one of five categories (`Proposed`, `InProgress`, `Resolved`, `Completed`, `Removed`).
 - **Area path.** ADO's tree of areas within a project, such as `Project/Team/Sub`. Every work item belongs to one area path. ADO calls the tree's entries "classification nodes".
 - **Parent and child.** ADO's hierarchy link type (`System.LinkTypes.Hierarchy`). A work item has at most one parent and any number of children. Other link types, such as Related, are not hierarchical.
-- **Location.** A value naming what a view shows. An area location holds an area path, the filters (R2.4) and the sub-area toggle (R2.5). An item location holds a work item ID and the show-all toggle (R3.8). Inline expansion (R3.4) is view state, not part of the location, so going back to a location shows it collapsed.
+- **Location.** A value naming what a view shows. An area location holds an area path, the filters (R2.4) and the sub-area toggle (R2.5). A query location holds the query's name and its filters (R9.3). An item location holds a work item ID and the show-all toggle (R3.8). Inline expansion (R3.4) is view state, not part of the location, so going back to a location shows it collapsed.
 - **Area view.** A list of one area's sub-areas and work items, for an area location (R2).
 - **Item view.** A tree of one work item's parent, area, children and linked items, for an item location (R3).
+- **Query list.** A list of the work items one fixed query finds, such as "my work items", for a query location (R9). Its rows stand for no relationship. Added 2026-10-13.
 - **Row.** One line of a view, carrying the ID of what it shows. A row is a sub-area, a work item, or a fixed entry such as the parent or area row of an item view.
 - **Snapshot.** The rows a view displayed when it was last loaded from ADO.
 - **Change plan.** The ordered list of ADO operations computed by comparing the current rows of every modified view against their snapshots. The user confirms the plan before anything is sent.
@@ -90,7 +91,7 @@ These terms are used throughout the requirements.
 
 ### R5. Editable buffers
 
-A row's position in a view stands for a relationship. In an area view, the relationship is the item's area path. In an item view, it is a parent, child or other link to the item the view is about. Deleting a row removes that relationship, pasting a row adds one, and deleting and pasting the same item in one save moves it. Saving never deletes a work item and never changes its state unless the state column on its row was edited.
+A row's position in a view stands for a relationship. In an area view, the relationship is the item's area path. In an item view, it is a parent, child or other link to the item the view is about. In a query list it stands for none; R9.4 to R9.7 set its rules. Deleting a row removes that relationship, pasting a row adds one, and deleting and pasting the same item in one save moves it. Saving never deletes a work item and never changes its state unless the state column on its row was edited.
 
 "Original kept" below means the item's existing relationship was not removed in the same save: its row was not deleted from the source view, or the source view was not open.
 
@@ -152,6 +153,27 @@ A row's position in a view stands for a relationship. In an area view, the relat
 - R8.6 `setup()` MUST accept the work item types that rows may be created as or changed to (R5.21). Decision 2026-10-12 (owner): these are set per project, as the `types` of each entry in the `projects` setting ([RFC 0002](0002-open-state-filter.md) R1.8), rather than as one global `types` list. Decision 2026-10-12 (owner): in a project with no `types`, any edit that sets a type (a new line, a copy or a type change) MUST reject the save and name the row, and the message MUST name the project, show the `setup()` entry to add and list the types the project's catalog has. When a project's catalog loads and its `types` names a type the catalog does not have (without regard to case), the plugin MUST warn once per session, naming those entries and listing the valid types, and MUST NOT fail the load.
 - R8.3 The plugin MUST expose functions for the dotfiles spec to bind (`area_view()`, `item_view(id)`), matching how `my_items()` and `search()` are bound today.
 
+### R9. Query lists
+
+Added 2026-10-13 at the owner's request: "my work items" moves from the Telescope picker to an editable list like the area view. The owner decided the editing rules (R9.4 to R9.7) the same day.
+
+- R9.1 A query list MUST show the work items one fixed query finds in the configured projects, one row per item with the columns of R5.17: type, state, title, assignee and tags. Rows MUST be ordered newest change first (`System.ChangedDate`). `my_items()` MUST open the query list `mine`: the items assigned to the user, which WIQL writes as the macro `@Me`.
+- R9.2 A query list MUST open in the window the area view uses, above the item view and the detail split, and selecting an item MUST open it as in R2.7 and R4.2. Opening a query list or an area view replaces the list in that window, so one list shows at a time. The area view toggle (`toggle_area_view()`, name kept so existing key bindings still work) MUST toggle that window, reopening whichever list, area view or query list, it showed last; an area view is reached from a query list by opening one (`area_view()`) or by going back in the history.
+- R9.3 A query list MUST offer the area view's state, type and tag filters, with the open state as the default (R2.4); the query fixes the assignee, so `mine` offers no assignee filter. It MUST also offer the window bar (R2.6), reload (R4.4), the shared history (R4.1) and "open in browser" for its query (R2.8), refused like the area view's when the URL is too long. Its buffer is named by its location, for example `ado://query/mine?state=open&type=&tag=`.
+- R9.4 A query list's rows MUST stand for no relationship. Column edits (R5.17 to R5.22) MUST save as in the other views. Deleting a row that is pasted nowhere in the same save MUST make no change, and the summary MUST list it as "no change" with that reason.
+- R9.5 Pasting a row into a query list, or adding a line to one, MUST reject the save and name the line, because a query list has no place to put an item.
+- R9.6 A row deleted from a query list and pasted in the same save into an area view or a child list MUST move the item: pasted in area B's view, it moves to area B; pasted under parent Q, its parent changes from the parent the row was loaded with to Q, or it gets parent Q when it had none. A paste into a parent row or a link section MUST do what it does when the original is kept (R5 table). One cut pasted into more than one area view or child list MUST reject the save and name the item (R5.10). The table below sums up a row cut from a query list, by where it is pasted in the same save:
+
+  | Pasted into | Result |
+  | --- | --- |
+  | Nowhere | No change; the summary says so (R9.4) |
+  | An area view | Move to that area |
+  | A child list (the rows under an item view's Children heading) | Change the parent to that item, or add it when the item had none |
+  | A parent row or a link section | As for a kept original: set the parent if the item has none, or add the link |
+  | A query list | Reject (R9.5) |
+  | More than one area view or child list | Reject, naming the item (R5.10) |
+- R9.7 A row yanked from a query list and pasted elsewhere MUST be a copy (R5.6), as from any view. Every other rule of R5 applies where R9.4 to R9.6 do not say otherwise: no item gets two parents (R5.9), conflicting edits to one item reject (R5.10), no move makes an item its own ancestor (R5.12), the summary warns when an item's new values would hide it from a view, a query list included (R5.13), and each write passes the revision guard (R5.14). All the changes to one item go in one write.
+
 ## 6. Assumptions to review
 
 Each assumption carries a risk if it is wrong.
@@ -206,3 +228,18 @@ Each behaviour is written so it can become a core test against a fake transport,
 28. Changing the type column of an existing `Task` to `user story` produces one type change to `User Story`, shown as a type change in the summary.
 29. Changing the type column of an existing item to a value outside the configured set, such as `Epic` or `Taks`, produces no change, and the summary lists the row as "no change".
 30. Changing an item's type when its current state is not valid for the new type, without also setting a valid state, produces a rejection that names the row.
+
+Query lists (R9), added 2026-10-13. "Mine" below is the query list of the open items assigned to the user.
+
+31. "Mine" lists the open items assigned to the user, newest first, with one query plus the type catalog of each project not loaded yet.
+32. The state, type and tag filters narrow "mine"; the assignee stays `@Me`.
+33. Editing the title, state, tags, type and assignee columns of rows in "mine" produces the same field updates as in an area view, one write per item.
+34. Deleting item X from "mine" with no paste elsewhere produces an empty plan, and the summary lists X as "no change".
+35. Pasting a row into "mine", or typing a new line in it, produces a rejection that names the line.
+36. Cutting item X from "mine" and pasting it into area B's view produces one area path update to B.
+37. Cutting child C, whose parent is P, from "mine" and pasting it under Q produces one parent change from P to Q, and C keeps its area path.
+38. Yanking item X from "mine" and pasting it into area B's view produces one create in area B, a copy of X.
+39. Cutting item X once from "mine" and pasting it into an area view and under a parent produces a rejection that names X.
+40. Cutting N from "mine" and pasting it under one of N's descendants is rejected before any transport call.
+41. Setting an item in "mine" to `Done` produces the state change and a warning that the item will not appear in "mine".
+42. With "mine" in the top window, the area view toggle closes it, and the toggle again reopens "mine"; after an area view is opened in its place, the toggle reopens that area view.

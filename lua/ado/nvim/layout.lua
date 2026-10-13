@@ -1,9 +1,10 @@
--- Window layout and navigation for the views (RFC 0001 R4.1, R4.2): one
--- column of stacked windows, the area view on top, the item view beneath
--- it, then the detail buffer, each present only when open. Each role reuses
--- its window while that window is in the current tab and still shows a
--- buffer of the role, so a window the user has put another buffer in is
--- left alone. Area and item locations share one history.
+-- Window layout and navigation for the views (RFC 0001 R4.1, R4.2, R9.2):
+-- one column of stacked windows, one per role: the list on top (an area
+-- view or a query list), the item view beneath it, then the detail
+-- buffer, each present only when open. Each role reuses its window while
+-- that window is in the current tab and still shows a buffer of the role,
+-- so a window the user has put another buffer in is left alone. Every
+-- location shares one history.
 local history = require("ado.core.history")
 local location = require("ado.core.location")
 
@@ -11,7 +12,12 @@ local M = {}
 
 M.history = history.new()
 
-local FILETYPES = { area = "adoarea", detail = "adoitem", item = "adoitemview" }
+-- role -> the filetypes of the buffers it shows.
+local FILETYPES = {
+  list = { adoarea = true, adoquery = true },
+  item = { adoitemview = true },
+  detail = { adoitem = true },
+}
 
 local wins = {}
 
@@ -19,7 +25,7 @@ local function win_of(role)
   local win = wins[role]
   if not win or not vim.api.nvim_win_is_valid(win)
       or vim.api.nvim_win_get_tabpage(win) ~= vim.api.nvim_get_current_tabpage()
-      or vim.bo[vim.api.nvim_win_get_buf(win)].filetype ~= FILETYPES[role] then
+      or not FILETYPES[role][vim.bo[vim.api.nvim_win_get_buf(win)].filetype] then
     wins[role] = nil
     return nil
   end
@@ -39,7 +45,7 @@ local function split(from, cmd)
   return vim.api.nvim_get_current_win()
 end
 
-local ORDER = { "area", "item", "detail" }
+local ORDER = { "list", "item", "detail" }
 
 -- Gives the open role windows equal heights, leaving other windows alone.
 -- Reads wins directly: a window just claimed still shows the buffer it was
@@ -84,10 +90,10 @@ local function window(role, use_current)
   return win
 end
 
--- The area view takes the current window when no view window is open yet.
-local function focus_area()
+-- The list takes the current window when no view window is open yet.
+local function focus_list()
   local alone = not win_of("item") and not win_of("detail")
-  vim.api.nvim_set_current_win(window("area", alone))
+  vim.api.nvim_set_current_win(window("list", alone))
 end
 
 local function detail_window()
@@ -98,19 +104,23 @@ local function focus_item()
   vim.api.nvim_set_current_win(window("item"))
 end
 
+-- role -> the last location it showed, which its toggle reopens.
+local last = {}
+
+local LIST_MODULES = { area = "ado.nvim.area_view", query = "ado.nvim.query_view" }
+
 -- Shows a location in its role's window and records it in the history,
 -- unless opts.record is false (back and forward). opts.keep_expansion is
 -- passed to the item view.
-local last = {}
-
 function M.go(loc, opts)
   opts = opts or {}
   if opts.record ~= false then M.history:visit(loc) end
-  last[loc.kind] = loc
-  if loc.kind == "area" then
-    focus_area()
-    return require("ado.nvim.area_view").show(loc)
+  if LIST_MODULES[loc.kind] then
+    last.list = loc
+    focus_list()
+    return require(LIST_MODULES[loc.kind]).show(loc)
   end
+  last.item = loc
   focus_item()
   return require("ado.nvim.item_view").show(loc, opts)
 end
@@ -141,10 +151,10 @@ function M.sync_detail(id)
   if win_of("detail") then M.show_detail(id, { focus = false }) end
 end
 
--- Selecting an item in the area view (R4.2): its detail buffer in the
+-- Selecting an item in a list (R4.2, R9.2): its detail buffer in the
 -- split, then its item view in the panel, which takes the cursor.
-function M.open_item_from_area(id)
-  claim("area", vim.api.nvim_get_current_win())
+function M.open_item_from_list(id)
+  claim("list", vim.api.nvim_get_current_win())
   M.show_detail(id)
   M.go(location.item(id))
 end
@@ -153,7 +163,7 @@ end
 -- buffer (R3.7), that window becomes the detail split.
 function M.open_item(id)
   local win = vim.api.nvim_get_current_win()
-  if vim.bo[vim.api.nvim_win_get_buf(win)].filetype == FILETYPES.detail then claim("detail", win) end
+  if FILETYPES.detail[vim.bo[vim.api.nvim_win_get_buf(win)].filetype] then claim("detail", win) end
   M.go(location.item(id))
 end
 
@@ -161,14 +171,14 @@ function M.window(role)
   return win_of(role)
 end
 
--- Closes the window of `role` ("area" or "item") and returns true, or
+-- Closes the window of `role` ("list" or "item") and returns true, or
 -- returns false when it has none. The last window in the tab stays open,
 -- since Neovim cannot close it.
 local function close(role)
   local win = win_of(role)
   if not win then return false end
   if #vim.api.nvim_tabpage_list_wins(0) == 1 then
-    vim.notify("[ado] the " .. role .. " view is the only window; not closing it", vim.log.levels.INFO)
+    vim.notify("[ado] the " .. role .. " window is the only window; not closing it", vim.log.levels.INFO)
     return true
   end
   vim.api.nvim_win_close(win, false)
@@ -177,12 +187,13 @@ local function close(role)
   return true
 end
 
--- Toggles the area view: closes its window, else reopens the last area
--- location shown. Returns false when there is nothing to reopen.
-function M.toggle_area()
-  if close("area") then return true end
-  if not last.area then return false end
-  M.go(last.area, { record = false })
+-- Toggles the top window: closes it, else reopens the last list shown,
+-- an area view or a query list. Returns false when there is nothing to
+-- reopen.
+function M.toggle_list()
+  if close("list") then return true end
+  if not last.list then return false end
+  M.go(last.list, { record = false })
   return true
 end
 

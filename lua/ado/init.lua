@@ -19,9 +19,13 @@ function M.setup(opts)
   end
 end
 
+-- Opens the "mine" query list (RFC 0001 R9): the open work items assigned
+-- to the user, in the top window of the view column.
 function M.my_items()
   M.setup()
-  require("ado.nvim.picker").my_items()
+  require("ado.nvim.session").ensure_project(function(ok)
+    if ok then require("ado.nvim.query_view").open(require("ado.core.location").query("mine")) end
+  end)
 end
 
 -- opts.all_states: include items in every state, not only open ones.
@@ -52,13 +56,11 @@ function M.area_view(path)
   end)
 end
 
--- Opens the item view for id, or for an ID typed at a prompt. From a detail
--- buffer the item view opens beside it.
--- Closes the area view, else reopens the last area shown, else asks for
--- an area as area_view() does.
+-- Closes the top window (an area view or a query list), else reopens the
+-- list last shown there, else asks for an area as area_view() does.
 function M.toggle_area_view()
   M.setup()
-  if not require("ado.nvim.layout").toggle_area() then M.area_view() end
+  if not require("ado.nvim.layout").toggle_list() then M.area_view() end
 end
 
 -- Closes the item view, else opens it for the work item in the current
@@ -69,6 +71,8 @@ function M.toggle_item_view()
   if not require("ado.nvim.layout").toggle_item(tonumber(id)) then M.item_view() end
 end
 
+-- Opens the item view for id, or for an ID typed at a prompt. From a detail
+-- buffer the item view opens beside it.
 function M.item_view(id)
   M.setup()
   local function open(value)
