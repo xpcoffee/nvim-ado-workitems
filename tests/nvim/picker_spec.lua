@@ -37,6 +37,7 @@ local function fresh(items)
   for k, v in pairs(seed) do data[k] = v end
   data.items = items or seed.items
   local fake = Fake.new(data)
+  require("ado.config").reset()
   require("ado.config").setup({ transport = fake, org = "test-org", project = "P", projects = false,
     write_guard = false })
   require("ado.nvim.session").reset()

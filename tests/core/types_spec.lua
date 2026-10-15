@@ -168,6 +168,43 @@ test("is_open and states ignore case; unknown types are not open", function()
   eq(c:names(), { "Task", "User Story", "Bug", "Issue" })
 end)
 
+test("UX2.6 the catalog keeps each type's and state's ADO colour, read through the transport", function()
+  local fake = Fake.new(seed)
+  local catalog
+  types.load(fake, "P", nil, function(err, c)
+    eq(err, nil)
+    catalog = c
+  end)
+  eq(catalog:type_color("Bug"), "cc293d", "lower case, without #")
+  eq(catalog:type_color("user story"), "009ccc", "type names ignore case")
+  eq(catalog:state_color("Task", "doing"), "007acc", "state names ignore case")
+  eq(catalog:state_color("Bug", "Resolved"), "ff9d00")
+end)
+
+test("UX2.6 a type or state without a colour, or not in the catalog, has none", function()
+  local c = types.new({
+    { name = "Plain", states = { { name = "Open", category = "Proposed" } } },
+    { name = "Odd", color = "red", states = { { name = "Open", category = "Proposed", color = "#12AB34" } } },
+  })
+  eq(c:type_color("Plain"), nil)
+  eq(c:state_color("Plain", "Open"), nil)
+  eq(c:type_color("Odd"), nil, "a colour that is not six hex digits is none")
+  eq(c:state_color("Odd", "Open"), "12ab34", "a leading # is dropped")
+  eq(c:type_color("Epic"), nil)
+  eq(c:state_color("Plain", "Closed"), nil)
+  local seeded = types.new(seed.types)
+  eq(seeded:type_color("Issue"), nil)
+  eq(seeded:state_color("Issue", "To Do"), nil)
+end)
+
+test("UX2.6 colours from the per-type fallback reach the catalog", function()
+  local fake = Fake.new(seed)
+  fake.types_omit_categories = true
+  local catalog
+  types.load(fake, "P", nil, function(_, c) catalog = c end)
+  eq(catalog:state_color("Task", "Done"), "339933")
+end)
+
 test("open condition renders per type, in catalog order", function()
   local c = types.new(seed.types)
   eq(wiql.render({ select = { "System.Id" }, where = c:open_condition() }),

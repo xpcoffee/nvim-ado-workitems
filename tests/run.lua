@@ -2,8 +2,22 @@
 --   nvim --headless -u NONE -l tests/run.lua [core]
 -- Order: static scan of lua/ado/core, the core suite in the sandbox, then the
 -- presentation suite with the real vim. Exits non-zero on any failure.
+--
+-- ADO_TEST_ORDER=reverse or shuffle runs the spec files of each suite in
+-- that order instead of by name, so a spec that leaves state behind for the
+-- next one fails; shuffle prints its seed, and ADO_TEST_SEED repeats it.
+-- ADO_TEST_ONLY picks spec files by path (make test ONLY=fit_spec).
 local root = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h")
 local only_core = (arg and arg[1]) == "core"
+local order = os.getenv("ADO_TEST_ORDER") or ""
+if order == "" then order = "name" end
+if order ~= "name" and order ~= "reverse" and order ~= "shuffle" then
+  io.stdout:write("ADO_TEST_ORDER must be name, reverse or shuffle, not " .. order .. "\n")
+  os.exit(2)
+end
+local seed = tonumber(os.getenv("ADO_TEST_SEED") or "") or os.time()
+-- ADO_TEST_ONLY=<text> runs only the spec files whose path holds text.
+local only = os.getenv("ADO_TEST_ONLY") or ""
 
 -- No test may reach `az`, pandoc or the network. These are replaced for the
 -- whole run, so a spec that exercises the az transport injects `system`.
@@ -90,9 +104,29 @@ local function run_spec(path, make_env, run_in)
 end
 
 local function specs(dir)
-  local list = vim.fn.glob(root .. "/tests/" .. dir .. "/*_spec.lua", false, true)
+  local list = {}
+  for _, path in ipairs(vim.fn.glob(root .. "/tests/" .. dir .. "/*_spec.lua", false, true)) do
+    if only == "" or path:find(only, 1, true) then table.insert(list, path) end
+  end
   table.sort(list)
+  if order == "reverse" then
+    local reversed = {}
+    for i = #list, 1, -1 do table.insert(reversed, list[i]) end
+    return reversed
+  elseif order == "shuffle" then
+    for i = #list, 2, -1 do
+      local j = math.random(i)
+      list[i], list[j] = list[j], list[i]
+    end
+  end
   return list
+end
+
+if order == "shuffle" then
+  math.randomseed(seed)
+  out("spec order: shuffle, ADO_TEST_SEED=" .. seed)
+elseif order == "reverse" then
+  out("spec order: reverse")
 end
 
 static_scan()

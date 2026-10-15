@@ -109,7 +109,8 @@ test("work_item_types runs devops invoke with the trimming projection", function
   eq(list, { { name = "Bug", isDisabled = false, states = {} } })
   eq(argvs[1], { "az", "devops", "invoke", "--area", "wit", "--resource", "workitemtypes",
     "--route-parameters", "project=P", "--api-version", "7.1",
-    "--query", "value[].{name: name, isDisabled: isDisabled, states: states[].{name: name, category: category}}",
+    "--query", "value[].{name: name, isDisabled: isDisabled, color: color, "
+      .. "states: states[].{name: name, category: category, color: color}}",
     "--output", "json", "--org", URL })
   local err = call(t, "work_item_types", {})
   eq(err.kind, "invalid")
@@ -117,7 +118,8 @@ test("work_item_types runs devops invoke with the trimming projection", function
 end)
 
 -- tests/fixtures/az/work_item_types.json is the trimmed response from the
--- Example project, recorded in the phase 1 route check.
+-- Example project, recorded in the phase 1 route check and again, with
+-- colours, for plan 0002 phase 2.
 local FIXTURES = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h") .. "/fixtures/az/"
 
 local function read(name)
@@ -142,6 +144,12 @@ test("the recorded types response builds a catalog with the real open states", f
   eq(c:is_open("Issue", "Waiting for External"), true)
   eq(c:is_open("Issue", "Discarded"), false)
   eq(c:states("Task"), { "New", "Active", "Closed", "Removed" })
+  for _, wt in ipairs(list) do
+    ok(c:type_color(wt.name), wt.name .. " has a colour")
+    for _, s in ipairs(wt.states) do ok(c:state_color(wt.name, s.name), wt.name .. " " .. s.name .. " has a colour") end
+  end
+  eq(c:type_color("Bug"), "cc293d")
+  eq(c:state_color("Bug", "Active"), "007acc")
   local w = wiql.render(query.my_items(c:open_condition()))
   -- 2,316 characters before types with the same open states were grouped.
   ok(#w < 1800, "my items WIQL is " .. #w .. " characters")

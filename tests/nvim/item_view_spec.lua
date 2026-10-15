@@ -21,8 +21,10 @@ test("item_view(id) opens ado://item/<id> in a window beneath the current one, r
   eq(vim.fn.winlayout()[1], "col")
   eq(parsed(buf), { "Checkout story", "Parent: none", "P\\Team\\A", "Children: 2", "Write API", "Add tests",
     "Related: 1", "Payments story" })
-  eq(vim.wo.winbar, "#100 User Story  ·  children and links: open only (<leader>wt for all)")
-  local labels = vim.api.nvim_buf_get_extmarks(buf, -1, 0, -1, { details = true, type = "virt_text" })
+  eq(vim.wo.winbar, "#100 User Story  ·  children and links: open only (<leader>wt for all)"
+    .. "%=%#AdoCount#2 children · 1 linked%*")
+  local labels = vim.api.nvim_buf_get_extmarks(buf, vim.api.nvim_get_namespaces().ado_view_labels, 0, -1,
+    { details = true })
   eq(#labels, 1)
   eq(labels[1][4].virt_text[1][1], "this item")
   eq(#env.fake.calls, 3, "get_work_item, query, catalog")
@@ -32,7 +34,8 @@ test("the parent row is labelled and shows a finished parent", function()
   views.fresh()
   local buf = open(107)
   eq(parsed(buf)[2], "Payments story")
-  local labels = vim.api.nvim_buf_get_extmarks(buf, -1, 0, -1, { details = true, type = "virt_text" })
+  local labels = vim.api.nvim_buf_get_extmarks(buf, vim.api.nvim_get_namespaces().ado_view_labels, 0, -1,
+    { details = true })
   eq(labels[2][2], 5, "after the item and its 4 field lines")
   eq(labels[2][4].virt_text[1][1], "parent")
 end)

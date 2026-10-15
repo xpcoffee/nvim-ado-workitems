@@ -3,7 +3,10 @@
 -- transport (nvim/az.lua); tests supply tests/support/fake_transport.lua.
 --
 -- Every operation is transport.<op>(params, cb). params is always a table ({}
--- when an operation takes none), and cb(err, result) runs exactly once. It may
+-- when an operation takes none); any params may also carry quiet = true,
+-- which transports ignore and which tells a wrapper that notifies failures
+-- (nvim/session.lua) that the caller reports them. cb(err, result) runs
+-- exactly once. It may
 -- run synchronously or later, so callers must not rely on code after the call
 -- running before the callback: the fake in its default sync mode calls back
 -- before returning, and only the az transport guarantees delivery on the

@@ -4,9 +4,9 @@
 -- between the area view and the detail split.
 local config = require("ado.config")
 local core = require("ado.core.item_view")
+local fit = require("ado.nvim.fit")
 local keymaps = require("ado.nvim.keymaps")
 local layout = require("ado.nvim.layout")
-local lines = require("ado.nvim.lines")
 local location = require("ado.core.location")
 local progress = require("ado.nvim.progress")
 local registry = require("ado.nvim.registry")
@@ -17,7 +17,7 @@ local view_buffer = require("ado.nvim.view_buffer")
 local M = {}
 
 -- buf -> { location, view, display (nil until loaded), ids = { row id per
--- line }, widths (column widths), expanding = { [id] = true } }
+-- line }, expanding = { [id] = true } }
 local state = {}
 
 local LABELS = { self = "this item", parent = "parent" }
@@ -26,14 +26,24 @@ local function notify(msg, level)
   vim.notify("[ado] " .. msg, level or vim.log.levels.INFO)
 end
 
-local function winbar(entry, suffix)
+local function winbar(entry)
   local loc = entry.location
   local text = "#" .. loc.id
   if entry.view then text = text .. " " .. entry.view.item.type end
   text = text .. "  ·  " .. (loc.all and "children and links: all states"
     or "children and links: open only (<leader>wt for all)")
   if entry.view and entry.view.truncated then text = text .. "  ·  links truncated" end
-  return text .. (suffix or "")
+  return text
+end
+
+-- The children and linked items the rows show, under the view's filter.
+local function counts(rows)
+  local children, linked = 0, 0
+  for _, row in ipairs(rows) do
+    if row.kind == "item" and row.slot == "child" and (row.depth or 0) == 0 then children = children + 1 end
+    if row.kind == "item" and row.slot == "link" then linked = linked + 1 end
+  end
+  return string.format("%d children · %d linked", children, linked)
 end
 
 local function add_ids(name, rows)
@@ -47,15 +57,15 @@ local function render(buf)
   registry.release(entry.ids)
   local rows = core.rows(entry.display)
   local ids = add_ids(vim.api.nvim_buf_get_name(buf), rows)
-  local text, _, widths = lines.render(rows, ids)
-  entry.ids, entry.widths = ids, widths
+  local text = fit.render(buf, rows, ids)
+  entry.ids = ids
   view_buffer.set_lines(buf, text)
   local labels = {}
   for i, row in ipairs(rows) do
     if row.kind == "item" and LABELS[row.slot] then labels[i - 1] = LABELS[row.slot] end
   end
   view_buffer.set_labels(buf, labels)
-  view_buffer.set_winbar(buf, winbar(entry))
+  view_buffer.set_winbar(buf, winbar(entry), counts(rows))
 end
 
 -- opts.quiet leaves the command line alone, for a caller that reports the
@@ -70,7 +80,7 @@ function M.load(buf, opts)
   local id = entry.location.id
   entry.loading = true
   view_buffer.set_editable(buf, false)
-  view_buffer.set_winbar(buf, winbar(entry, "  ·  loading"))
+  view_buffer.set_winbar(buf, winbar(entry), "loading")
   core.load(session.get(), entry.location, {
     link_types = config.get().link_types,
     on_progress = function(done, total, what)
@@ -82,7 +92,7 @@ function M.load(buf, opts)
     view_buffer.set_editable(buf, true)
     if err then
       -- Transport errors are already reported by nvim/session.lua.
-      view_buffer.set_winbar(buf, winbar(entry, "  ·  load failed, <leader>wr retries"))
+      view_buffer.set_winbar(buf, winbar(entry), "load failed, <leader>wr retries")
       return done_cb(err)
     end
     entry.view = view
@@ -180,9 +190,9 @@ function actions.expand()
   local display = entry.display
   if display.expanded[row.id] then
     local last = block_end(entry, line, row.depth)
-    view_buffer.delete_lines(buf, line, last)
     local removed = {}
     for i = last, line + 1, -1 do table.insert(removed, table.remove(entry.ids, i)) end
+    view_buffer.delete_lines(buf, line, last)
     registry.release(removed)
     core.collapse(display, row.id)
     return
@@ -199,10 +209,11 @@ function actions.expand()
     local at = line_of(entry, row_id)
     if not at then return end
     local ids = add_ids(vim.api.nvim_buf_get_name(buf), rows)
-    local text, _, widths = lines.render(rows, ids, entry.widths)
-    entry.widths = widths
-    view_buffer.insert_lines(buf, at, text)
+    -- Laid out on their own; the re-pad of insert_lines fits them to the
+    -- rows already shown.
+    local text = fit.render_more(buf, rows, ids)
     for i, id in ipairs(ids) do table.insert(entry.ids, at + i, id) end
+    view_buffer.insert_lines(buf, at, text)
     if #rows == 0 then
       progress.echo(info.total == 0 and string.format("#%d has no children", row.id)
         or string.format("#%d has no open children; <leader>wt shows all", row.id))
@@ -248,7 +259,11 @@ end
 -- keeps the edits. Called by layout.go.
 function M.show(loc, opts)
   opts = opts or {}
-  local buf, created = view_buffer.get_or_create(location.buffer_name(loc), "adoitemview")
+  local buf, created = view_buffer.get_or_create(location.buffer_name(loc), "adoitemview", {
+    syntax = "adoitem",
+    ids = function(b) return state[b] and state[b].ids end,
+    project = function(b) return state[b] and state[b].view and state[b].view.item.project end,
+  })
   if created then
     state[buf] = { location = loc, ids = {}, expanding = {} }
     keymaps.item(buf, actions)

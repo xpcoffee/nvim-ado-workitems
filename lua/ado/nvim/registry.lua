@@ -17,6 +17,11 @@ function M.get(id)
   return entries[id]
 end
 
+-- Calls fn(entry, id) for every row the views hold now.
+function M.each(fn)
+  for id, entry in pairs(entries) do fn(entry, id) end
+end
+
 function M.release(ids)
   for _, id in ipairs(ids or {}) do entries[id] = nil end
 end

@@ -1,490 +1,601 @@
 [
   {
+    "color": "CC293D",
     "isDisabled": false,
     "name": "Bug",
     "states": [
       {
         "category": "Proposed",
+        "color": "b2b2b2",
         "name": "New"
       },
       {
         "category": "InProgress",
+        "color": "007acc",
         "name": "Active"
       },
       {
         "category": "Resolved",
+        "color": "ff9d00",
         "name": "Resolved"
       },
       {
         "category": "Completed",
+        "color": "339933",
         "name": "Closed"
       }
     ]
   },
   {
+    "color": "B4009E",
     "isDisabled": false,
     "name": "Code Review Request",
     "states": [
       {
         "category": "Proposed",
+        "color": "b2b2b2",
         "name": "Requested"
       },
       {
         "category": "Completed",
+        "color": "339933",
         "name": "Closed"
       }
     ]
   },
   {
+    "color": "B4009E",
     "isDisabled": false,
     "name": "Code Review Response",
     "states": [
       {
         "category": "Proposed",
+        "color": "b2b2b2",
         "name": "Requested"
       },
       {
         "category": "InProgress",
+        "color": "007acc",
         "name": "Accepted"
       },
       {
         "category": "Completed",
+        "color": "339933",
         "name": "Closed"
       }
     ]
   },
   {
-    "isDisabled": true,
+    "color": "E06C00",
+    "isDisabled": false,
     "name": "Epic",
     "states": [
       {
         "category": "Proposed",
+        "color": "b2b2b2",
         "name": "New"
       },
       {
         "category": "InProgress",
+        "color": "007acc",
         "name": "Active"
       },
       {
         "category": "InProgress",
+        "color": "007acc",
         "name": "Resolved"
       },
       {
         "category": "Completed",
+        "color": "339933",
         "name": "Closed"
       },
       {
         "category": "Removed",
+        "color": "ffffff",
         "name": "Removed"
       }
     ]
   },
   {
+    "color": "773B93",
     "isDisabled": false,
     "name": "Feature",
     "states": [
       {
         "category": "Proposed",
+        "color": "b2b2b2",
         "name": "New"
       },
       {
         "category": "InProgress",
+        "color": "ef33a3",
         "name": "Planning"
       },
       {
         "category": "InProgress",
+        "color": "007acc",
         "name": "Active"
       },
       {
         "category": "InProgress",
+        "color": "e87025",
         "name": "Testing"
       },
       {
         "category": "Completed",
+        "color": "339933",
         "name": "Closed"
       },
       {
         "category": "Removed",
+        "color": "ffffff",
         "name": "Removed"
       }
     ]
   },
   {
+    "color": "004B50",
     "isDisabled": false,
     "name": "Feedback Request",
     "states": [
       {
         "category": "InProgress",
+        "color": "007acc",
         "name": "Active"
       },
       {
         "category": "Completed",
+        "color": "339933",
         "name": "Closed"
       },
       {
         "category": "Removed",
+        "color": "ffffff",
         "name": "Removed"
       }
     ]
   },
   {
+    "color": "004B50",
     "isDisabled": false,
     "name": "Feedback Response",
     "states": [
       {
         "category": "InProgress",
+        "color": "007acc",
         "name": "Active"
       },
       {
         "category": "Completed",
+        "color": "339933",
         "name": "Closed"
       }
     ]
   },
   {
+    "color": "004B50",
     "isDisabled": false,
     "name": "Shared Steps",
     "states": [
       {
         "category": "InProgress",
+        "color": "007acc",
         "name": "Active"
       },
       {
         "category": "Completed",
+        "color": "339933",
         "name": "Closed"
       }
     ]
   },
   {
+    "color": "A4880A",
     "isDisabled": false,
     "name": "Task",
     "states": [
       {
         "category": "Proposed",
+        "color": "b2b2b2",
         "name": "New"
       },
       {
         "category": "InProgress",
+        "color": "007acc",
         "name": "Active"
       },
       {
         "category": "Completed",
+        "color": "339933",
         "name": "Closed"
       },
       {
         "category": "Removed",
+        "color": "ffffff",
         "name": "Removed"
       }
     ]
   },
   {
+    "color": "004B50",
     "isDisabled": false,
     "name": "Test Case",
     "states": [
       {
         "category": "Proposed",
+        "color": "b2b2b2",
         "name": "Design"
       },
       {
         "category": "InProgress",
+        "color": "007acc",
         "name": "Ready"
       },
       {
         "category": "Completed",
+        "color": "339933",
         "name": "Closed"
       }
     ]
   },
   {
+    "color": "004B50",
     "isDisabled": false,
     "name": "Test Plan",
     "states": [
       {
         "category": "InProgress",
+        "color": "007acc",
         "name": "Active"
       },
       {
         "category": "Completed",
+        "color": "339933",
         "name": "Inactive"
       }
     ]
   },
   {
+    "color": "004B50",
     "isDisabled": false,
     "name": "Test Suite",
     "states": [
       {
         "category": "InProgress",
+        "color": "007acc",
         "name": "In Planning"
       },
       {
         "category": "InProgress",
+        "color": "007acc",
         "name": "In Progress"
       },
       {
         "category": "Completed",
+        "color": "339933",
         "name": "Completed"
       }
     ]
   },
   {
+    "color": "009CCC",
     "isDisabled": false,
     "name": "User Story",
     "states": [
       {
         "category": "Proposed",
+        "color": "b2b2b2",
         "name": "New"
       },
       {
         "category": "InProgress",
+        "color": "007acc",
         "name": "Active"
       },
       {
         "category": "InProgress",
+        "color": "e87025",
         "name": "Testing"
       },
       {
         "category": "Completed",
+        "color": "339933",
         "name": "Closed"
       },
       {
         "category": "Removed",
+        "color": "ffffff",
         "name": "Removed"
       }
     ]
   },
   {
+    "color": "B4009E",
     "isDisabled": false,
     "name": "Issue",
     "states": [
       {
         "category": "Proposed",
+        "color": "b2b2b2",
         "name": "New"
       },
       {
         "category": "InProgress",
+        "color": "007acc",
         "name": "Active"
       },
       {
         "category": "InProgress",
+        "color": "d6eded",
         "name": "Waiting for External"
       },
       {
         "category": "Resolved",
+        "color": "FF9D00",
         "name": "In Review"
       },
       {
         "category": "Completed",
+        "color": "339933",
         "name": "Closed"
       },
       {
         "category": "Removed",
+        "color": "666666",
         "name": "Discarded"
       }
     ]
   },
   {
+    "color": "004B50",
     "isDisabled": false,
     "name": "Shared Parameter",
     "states": [
       {
         "category": "InProgress",
+        "color": "007acc",
         "name": "Active"
       },
       {
         "category": "Completed",
+        "color": "339933",
         "name": "Inactive"
       }
     ]
   },
   {
+    "color": "292e6b",
     "isDisabled": false,
     "name": "Program",
     "states": [
       {
         "category": "Proposed",
+        "color": "b2b2b2",
         "name": "New"
       },
       {
         "category": "InProgress",
+        "color": "007acc",
         "name": "Active"
       },
       {
         "category": "Completed",
+        "color": "339933",
         "name": "Closed"
       }
     ]
   },
   {
+    "color": "e87025",
     "isDisabled": false,
     "name": "Meeting",
     "states": [
       {
         "category": "Proposed",
+        "color": "b2b2b2",
         "name": "New"
       },
       {
         "category": "InProgress",
+        "color": "ef33a3",
         "name": "Planning"
       },
       {
         "category": "InProgress",
+        "color": "007acc",
         "name": "Active"
       },
       {
         "category": "InProgress",
+        "color": "9260a1",
         "name": "Follow up"
       },
       {
         "category": "Completed",
+        "color": "339933",
         "name": "Closed"
       },
       {
         "category": "Removed",
+        "color": "666666",
         "name": "Discarded"
       }
     ]
   },
   {
+    "color": "207752",
     "isDisabled": false,
     "name": "Milestone",
     "states": [
       {
         "category": "Proposed",
+        "color": "b2b2b2",
         "name": "New"
       },
       {
         "category": "InProgress",
+        "color": "007acc",
         "name": "Active"
       },
       {
         "category": "Completed",
+        "color": "339933",
         "name": "Closed"
       },
       {
         "category": "Removed",
+        "color": "cccccc",
         "name": "Removed"
       }
     ]
   },
   {
+    "color": "fbbc3d",
     "isDisabled": false,
     "name": "Project",
     "states": [
       {
         "category": "Proposed",
+        "color": "b2b2b2",
         "name": "New"
       },
       {
         "category": "InProgress",
+        "color": "ec008c",
         "name": "Exploration"
       },
       {
         "category": "InProgress",
+        "color": "007acc",
         "name": "Active"
       },
       {
         "category": "InProgress",
+        "color": "fbe74b",
         "name": "Shipped"
       },
       {
         "category": "Completed",
+        "color": "339933",
         "name": "Closed"
       },
       {
         "category": "Removed",
+        "color": "cccccc",
         "name": "Removed"
       }
     ]
   },
   {
+    "color": "1b478b",
     "isDisabled": true,
     "name": "Research",
     "states": [
       {
         "category": "Proposed",
+        "color": "b2b2b2",
         "name": "New"
       },
       {
         "category": "InProgress",
+        "color": "007acc",
         "name": "Active"
       },
       {
         "category": "Completed",
+        "color": "339933",
         "name": "Closed"
       }
     ]
   },
   {
+    "color": "207752",
     "isDisabled": false,
     "name": "Change Request",
     "states": [
       {
         "category": "Proposed",
+        "color": "b2b2b2",
         "name": "New"
       },
       {
         "category": "Proposed",
+        "color": "666666",
         "name": "On hold"
       },
       {
         "category": "Proposed",
+        "color": "71338d",
         "name": "Plan Review"
       },
       {
         "category": "InProgress",
+        "color": "007acc",
         "name": "Active"
       },
       {
         "category": "InProgress",
+        "color": "71338d",
         "name": "Report Review"
       },
       {
         "category": "Completed",
+        "color": "339933",
         "name": "Completed"
       },
       {
         "category": "Removed",
+        "color": "666666",
         "name": "Discarded"
       }
     ]
   },
   {
+    "color": "00643a",
     "isDisabled": true,
     "name": "Requirement",
     "states": [
       {
         "category": "Proposed",
+        "color": "b2b2b2",
         "name": "New"
       },
       {
         "category": "InProgress",
+        "color": "007acc",
         "name": "Active"
       },
       {
         "category": "Completed",
+        "color": "339933",
         "name": "Closed"
       }
     ]
   },
   {
+    "color": "b20b1e",
     "isDisabled": false,
     "name": "Incident",
     "states": [
       {
         "category": "Proposed",
+        "color": "b2b2b2",
         "name": "New"
       },
       {
         "category": "InProgress",
+        "color": "007acc",
         "name": "Active"
       },
       {
         "category": "Completed",
+        "color": "339933",
         "name": "Closed"
       },
       {
         "category": "Removed",
+        "color": "666666",
         "name": "Discarded"
       }
     ]

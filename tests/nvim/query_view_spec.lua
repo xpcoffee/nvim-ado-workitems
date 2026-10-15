@@ -32,7 +32,7 @@ test("A0001-31 my_items() opens the open items assigned to the user in an editab
     eq(vim.bo[buf].buftype, "acwrite")
     eq(vim.bo[buf].modifiable, true)
     eq(shown(buf), { "Resolved bug", "Fix login", "Write API", "Checkout story" })
-    eq(vim.wo.winbar, "My work items  ·  state: open  ·  assignee: @Me  ·  type: any  ·  tag: any  ·  4 items")
+    eq(vim.wo.winbar, "My work items  ·  state: open  ·  assignee: @Me  ·  type: any  ·  tag: any%=%#AdoCount#4 items%*")
     eq(env.layout.window("list"), vim.api.nvim_get_current_win())
     local first = require("ado.nvim.lines").parse(vim.api.nvim_buf_get_lines(buf, 0, 1, false)[1])
     eq({ first.type, first.state, first.title, first.assignee, first.tags },

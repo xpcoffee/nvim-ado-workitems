@@ -16,6 +16,7 @@ end
 local function fresh()
   vim.cmd("silent! %bwipeout!")
   local fake = Fake.new(seed)
+  require("ado.config").reset()
   require("ado.config").setup({ transport = fake, org = "test-org", project = "P" })
   require("ado.nvim.session").reset()
   local executable = vim.fn.executable

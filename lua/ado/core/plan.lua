@@ -21,10 +21,13 @@
 --            row_id and line
 --   current row  = { row_id | nil, line, kind, title, state, type, assignee,
 --            tags (items), name (areas), label (headings), field, value
---            (fields), origin = { key, row } | nil }; origin is set for a
---            row ID this view did not load (a row pasted from another
---            view), from the row ID registry; a row whose snapshot or origin
---            row has slot "self" holds only its title
+--            (fields), origin = { key, row } | nil, ambiguous = { column... }
+--            | nil }; origin is set for a row ID this view did not load (a
+--            row pasted from another view), from the row ID registry; a row
+--            whose snapshot or origin row has slot "self" holds only its
+--            title. Cells cut to fit the window hold their full values;
+--            ambiguous names the cut cells whose full value is not known
+--            (plan 0002 UX5.4), whose text is then what the buffer shows
 --
 --   plan = { ops = { op... }, notes = { note... }, rejections = { rejection... } }
 --   op   = { kind, id, expect_rev, views = { key... }, ... } where kind is
@@ -41,13 +44,15 @@
 --   note = { kind = "warning" | "no_change", id, views, rule, message }
 --   rejection = { id | nil, line | nil, views, rule, message }
 local area_path = require("ado.core.area_path")
+local choices = require("ado.core.choices")
 local item_view = require("ado.core.item_view")
+local row_changes = require("ado.core.row_changes")
 local workitem = require("ado.core.workitem")
 
 local M = {}
 
 -- The columns a row edit can change, in the order their ops run on one item.
-M.EDITABLE = { "title", "type", "state", "assignee", "tags" }
+M.EDITABLE = row_changes.FIELDS
 
 -- Default types for new lines (R5.18; plan 0001 section 8).
 M.DEFAULT_TYPES = { area = "Task", children = "Task" }
@@ -62,9 +67,7 @@ local LAST_SELF_FIELD = item_view.SELF_FIELDS[#item_view.SELF_FIELDS]
 -- from looping.
 local MAX_ANCESTORS = 100
 
-local function trim(s)
-  return ((s or ""):gsub("^%s+", ""):gsub("%s+$", ""))
-end
+local trim = row_changes.trim
 
 local function lower(s)
   return type(s) == "string" and s:lower() or s
@@ -108,24 +111,8 @@ local function same_text(a, b)
   return lower(trim(a)) == lower(trim(b))
 end
 
--- "b; A; a" -> "A; b": ADO keeps tags as a set, compared without regard
--- to case, so order and repeats carry no meaning.
-local function norm_tags(s)
-  local out, seen = {}, {}
-  for tag in (s or ""):gmatch("[^;]+") do
-    local t = trim(tag)
-    if t ~= "" and not seen[t:lower()] then
-      seen[t:lower()] = true
-      table.insert(out, t)
-    end
-  end
-  table.sort(out, function(a, b) return a:lower() < b:lower() end)
-  return out
-end
-
-local function tags_text(s)
-  return table.concat(norm_tags(s), "; ")
-end
+local norm_tags = row_changes.norm_tags
+local tags_text = row_changes.tags_text
 
 -- The tags in `b` and not in `a`, without regard to case.
 local function tags_missing(a, b)
@@ -208,12 +195,7 @@ local function snapshot_region(view, s)
   return "link:" .. tostring(s.rel)
 end
 
-local function blank(c)
-  for _, f in ipairs({ "title", "type", "state", "assignee", "tags" }) do
-    if trim(c[f]) ~= "" then return false end
-  end
-  return true
-end
+local blank = row_changes.blank
 
 -- Sorts one view's current rows by where they stand:
 --   fixed     = { { c, s }... }  the fixed rows, as loaded
@@ -341,8 +323,21 @@ local function known_parents(views)
   return parents
 end
 
+-- Whether column of current row c is a cut cell whose full value is not
+-- known (UX5.4); for a field line, column is its field.
+local function ambiguous(c, column)
+  for _, a in ipairs(c.ambiguous or {}) do
+    if a == column then return true end
+  end
+  return false
+end
+
+-- What a cut cell is called in a rejection.
+local CUT_NAMES = { title = "title", type = "type", state = "state", assignee = "assignee", tags = "tags" }
+
 -- Every assignee text the views hold that differs from the row it edits,
--- or that a new line holds, once each without regard to case.
+-- or that a new line holds, once each without regard to case. A cut
+-- assignee with no known value is left out: its row rejects.
 local function assignee_texts(views)
   local out, seen = {}, {}
   local function add(text)
@@ -357,10 +352,12 @@ local function assignee_texts(views)
     for _, s in ipairs(view.snapshot) do snap[s.row_id] = s end
     for _, c in ipairs(view.current) do
       local s = c.row_id and (snap[c.row_id] or (c.origin and c.origin.row))
-      if c.kind == "item" and c.assignee ~= nil then
-        if not s or trim(c.assignee) ~= trim(s.assignee) then add(c.assignee) end
+      if ambiguous(c, c.kind == "field" and c.field or "assignee") then
+        -- rejected in compute
+      elseif c.kind == "item" and c.assignee ~= nil then
+        if not s or row_changes.differs("assignee", c.assignee, s.assignee) then add(c.assignee) end
       elseif c.kind == "field" and c.field == "assignee" and s and s.kind == "field" then
-        if trim(c.value) ~= trim(s.value) then add(c.value) end
+        if row_changes.differs("assignee", c.value, s.value) then add(c.value) end
       end
     end
   end
@@ -511,12 +508,7 @@ function M.compute(views, prepared)
   -- Why a row cannot set a type in a project with no configured types
   -- (R8.6): the plan cannot tell a typo from a type the user wants.
   local function no_types(project)
-    local catalog = catalogs[project]
-    local choices = catalog and string.format(", choosing from the types %s has: %s", project,
-      table.concat(catalog:names(), ", ")) or ""
-    return string.format("project %s has no types configured, so a row cannot be created as or changed to a"
-      .. " type in it; add them in setup(), for example projects = { { name = \"%s\", types = { ... } } }%s",
-      tostring(project), tostring(project), choices)
+    return choices.no_types(project, catalogs[project])
   end
 
   local function identity_for(text)
@@ -560,38 +552,18 @@ function M.compute(views, prepared)
     table.insert(e.values[value].lines, { key = view.key, line = line })
   end
 
-  -- An edited column's value as the plan compares it: tags as a sorted set.
-  local function column_value(field, text)
-    if field == "tags" then return tags_text(text) end
-    return trim(text)
-  end
-  -- Tags compare without regard to case, as ADO matches them.
-  local function edited(field, text, loaded)
-    local a, b = column_value(field, text), column_value(field, loaded)
-    if field == "tags" then return lower(a) ~= lower(b) end
-    return a ~= b
-  end
-
   -- The column edits on one item row, against the row it shows.
   local function column_diffs(view, c, s)
-    local diffs = {}
-    if s.slot == "self" then
-      if c.type ~= nil then
-        reject(view, c.line, s.id, "R5", "this row was copied from an item's own title line, which holds only"
-          .. " the title; put it back as it was copied, or reload")
-      elseif trim(c.title) ~= trim(s.title) then
-        diffs.title = trim(c.title)
-      end
-      return diffs
-    end
-    if c.type == nil then
+    local diffs, problem = row_changes.changed(s, c)
+    if problem == "self_copy" then
+      reject(view, c.line, s.id, "R5", "this row was copied from an item's own title line, which holds only"
+        .. " the title; put it back as it was copied, or reload")
+    elseif problem == "separators" then
       reject(view, c.line, s.id, "R5",
         "the row needs its four │ separators (type │ state │ title │ assignee │ tags); restore them, or reload")
-      return diffs
     end
-    for _, f in ipairs(M.EDITABLE) do
-      if edited(f, c[f], s[f]) then diffs[f] = column_value(f, c[f]) end
-    end
+    -- A cut cell with no known value has rejected the row; it edits nothing.
+    for _, a in ipairs(c.ambiguous or {}) do diffs[a] = nil end
     return diffs
   end
 
@@ -603,29 +575,38 @@ function M.compute(views, prepared)
     local out = classify(view, reject)
     sorted[vi] = out
 
+    -- UX5.4: a cut value must never reach ADO, so a row with a cut cell
+    -- whose full value is not known rejects whatever else it edits.
+    local loaded_ids = {}
+    for _, s in ipairs(view.snapshot) do loaded_ids[s.row_id] = s.id end
+    for _, c in ipairs(view.current) do
+      for _, column in ipairs(c.ambiguous or {}) do
+        local name = CUT_NAMES[column] or column
+        reject(view, c.line, c.row_id and (loaded_ids[c.row_id] or (c.origin and c.origin.row.id)), "UX5.4",
+          string.format("the %s was cut to fit the window and the … was edited, so its full text is not known;"
+            .. " undo the edit, or press <leader>wx on the cell and edit the full %s", name, name))
+      end
+    end
+
     for _, f in ipairs(out.fixed) do
       local c, s = f.c, f.s
-      if s.kind == "item" then
-        if c.kind ~= "item" then
-          reject(view, c.line, s.id, "R5", "this line no longer reads as the item's title; undo the change, or reload")
-        elseif trim(c.title) ~= trim(s.title) then
-          edit(view, c.line, s.id, "title", trim(c.title))
-        end
-      elseif c.kind ~= s.kind then
+      local diffs, problem = row_changes.changed(s, c)
+      if c.ambiguous then diffs = {} end
+      if problem == "kind" and s.kind == "item" then
+        reject(view, c.line, s.id, "R5", "this line no longer reads as the item's title; undo the change, or reload")
+      elseif problem == "kind" then
         reject(view, c.line, s.id, "R5",
           "this line no longer reads as a " .. s.kind .. " row; undo the change, or reload")
-      elseif s.kind == "area" then
-        if trim(c.name) ~= trim(s.name) then
-          reject(view, c.line, nil, "R5.16", "area rows are read-only")
-        end
-      elseif s.kind == "heading" then
-        if trim(c.label) ~= trim(s.label) then
-          reject(view, c.line, nil, "R5", "headings are read-only")
-        end
-      elseif c.field ~= s.field then
+      elseif problem == "field_name" then
         reject(view, c.line, s.id, "R5", "field names are read-only")
-      elseif edited(s.field, c.value, s.value) then
-        edit(view, c.line, s.id, s.field, column_value(s.field, c.value))
+      elseif diffs.name then
+        reject(view, c.line, nil, "R5.16", "area rows are read-only")
+      elseif diffs.label then
+        reject(view, c.line, nil, "R5", "headings are read-only")
+      elseif s.kind == "item" then
+        if diffs.title then edit(view, c.line, s.id, "title", diffs.title) end
+      elseif s.kind == "field" and diffs[s.field] then
+        edit(view, c.line, s.id, s.field, diffs[s.field])
       end
     end
 
@@ -1018,8 +999,7 @@ function M.compute(views, prepared)
         end
         if trim(c.title) == "" then invalid("R5.17", "a new line needs a title") end
         if trim(c.state) ~= "" then
-          invalid("R5.18", "a new item starts in its type's initial state; leave the state column empty,"
-            .. " and change it after saving")
+          invalid("R5.18", choices.NEW_STATE)
         end
         local who
         if trim(c.assignee) ~= "" then

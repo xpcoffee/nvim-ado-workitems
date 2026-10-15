@@ -8,6 +8,7 @@ local function fresh(opts)
   opts.transport = fake
   opts.org = "test-org"
   if opts.projects == nil then opts.projects = false end
+  require("ado.config").reset()
   require("ado.config").setup(opts)
   local session = require("ado.nvim.session")
   session.reset()

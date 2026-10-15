@@ -32,15 +32,18 @@ local function on_event(event)
 end
 
 -- Every transport failure is reported once here, so call sites only decide
--- what to do next, except while errors are muted. A conflict is left to the
--- caller, which knows the rev it expected and how the user can recover.
+-- what to do next, except while errors are muted or the call is quiet. A
+-- conflict is left to the caller, which knows the rev it expected and how
+-- the user can recover.
 local function notify_errors(t)
   local wrapped = {}
   for name, fn in pairs(t) do
     if type(fn) == "function" then
       wrapped[name] = function(params, cb)
         fn(params, function(err, result)
-          if err and err.kind ~= "conflict" and muted == 0 then notify(err.message, vim.log.levels.ERROR) end
+          if err and err.kind ~= "conflict" and muted == 0 and not params.quiet then
+            notify(err.message, vim.log.levels.ERROR)
+          end
           cb(err, result)
         end)
       end

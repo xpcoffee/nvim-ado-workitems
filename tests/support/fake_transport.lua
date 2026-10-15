@@ -505,9 +505,10 @@ function Fake:op_work_item_types(params)
   for _, t in ipairs(self:types_of(params.project)) do
     local states = {}
     for _, st in ipairs(t.states) do
-      table.insert(states, { name = st.name, category = (not self.types_omit_categories) and st.category or nil })
+      table.insert(states, { name = st.name, category = (not self.types_omit_categories) and st.category or nil,
+        color = st.color })
     end
-    table.insert(out, { name = t.name, isDisabled = false, states = states })
+    table.insert(out, { name = t.name, isDisabled = false, color = t.color, states = states })
   end
   return nil, out
 end

@@ -89,6 +89,15 @@ function M.item_view(id)
   end)
 end
 
+-- Prints how often the views' editing helpers ran and how long they took
+-- (plan 0002 UX1.8): counts, last and largest durations. Returns the lines.
+function M.ux_stats()
+  local lines = require("ado.nvim.ux_stats").lines()
+  if #lines == 0 then lines = { "no re-pads yet" } end
+  vim.api.nvim_echo({ { "[ado] " .. table.concat(lines, "\n[ado] ") } }, true, {})
+  return lines
+end
+
 function M.open(id)
   M.setup()
   require("ado.nvim.detail").open(id)

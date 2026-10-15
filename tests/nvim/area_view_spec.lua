@@ -18,6 +18,7 @@ local function fresh(opts)
   local c = { transport = fake, org = "test-org", project = "P", projects = false, write_guard = false,
     area_paths = { "P/Team", "P\\Team\\B" }, area_filters = { state = "open" } }
   for k, v in pairs(opts or {}) do c[k] = v end
+  require("ado.config").reset()
   require("ado.config").setup(c)
   require("ado.nvim.session").reset()
   for _, m in ipairs({ "ado.nvim.area_view", "ado.nvim.item_view", "ado.nvim.layout" }) do package.loaded[m] = nil end
@@ -68,8 +69,8 @@ test("the view of P/Team lists its sub-areas in an editable acwrite buffer named
   eq(vim.bo[buf].modifiable, true)
   eq(vim.wo.conceallevel, 2)
   eq(vim.wo.winbar, "P\\Team  ·  state: open  ·  assignee: any  ·  type: any  ·  tag: any"
-    .. "  ·  sub-areas: excluded  ·  4 sub-areas, 0 items")
-  local marks = vim.api.nvim_buf_get_extmarks(buf, -1, 0, -1, { details = true })
+    .. "  ·  sub-areas: excluded%=%#AdoCount#4 sub-areas · 0 items%*")
+  local marks = vim.api.nvim_buf_get_extmarks(buf, vim.api.nvim_get_namespaces().ado_view, 0, -1, { details = true })
   eq(#marks, 4)
   eq(marks[1][4].conceal, "")
   eq(#fake.calls, 3, "area_children, catalog, query")

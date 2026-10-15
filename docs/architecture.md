@@ -40,7 +40,11 @@ same error again. Errors the core raises itself do not pass through the
 notifier, and neither does a `conflict` from the transport, so callers
 report those: the caller knows which rev it expected and how the user can
 recover. While a save applies, `nvim/save.lua` mutes the notifier
-(`session.mute_errors`), because the save's report carries the error.
+(`session.mute_errors`), because the save's report carries the error. A
+single call can also pass `quiet = true` in its params, which transports
+ignore and the notifier honours: the assignee menu (`nvim/people.lua`)
+searches on every pause in typing, so it reports a failed search itself,
+once per Insert session, instead of once per search.
 
 ## Projects and type catalogs
 
@@ -94,6 +98,59 @@ conceals; `nvim/registry.lua` maps it to what the row shows. Rows are read
 by ID, never by matching text, so two items with the same title stay apart.
 Views are edited in place and saved with `:w`; see "Saving views" below.
 
+Item rows are padded with real spaces to the widest cell of each column,
+up to the widths that fit the window (`core/table_layout.lua`; see
+"Fitting the window" below). After a change of the user's, `nvim/realign.lua`
+re-pads: it rewrites only the runs of spaces that no longer line up, with
+`nvim_buf_set_text` after `:undojoin`, so the change and its re-pad are one
+undo step, and the row ID prefixes and end-of-line labels stay in place.
+It does nothing for a load, an expansion or a save's reload, which render
+aligned; for a view with no unsaved edits; and at an undo state older than
+the newest, where `:undojoin` fails with E790 and every state is aligned
+already. On `InsertLeave` it waits one event loop turn, because a blockwise
+insert copies the typed text to the other selected lines after
+`InsertLeave`, reading it back from the first line. The plan trims every
+cell, so a re-pad never changes what a save sends. `nvim/cells.lua` finds
+the cell under the cursor by the same ranges, for the `ic` and `ac` text
+objects.
+
+Type and state cells offer their valid values. `core/choices.lua` decides
+which: for a type, the project's configured `types` that its catalog has;
+for a state, the states of the type the save would check it against,
+which is the type typed on the line when the save would change the row to
+it, else the loaded type. It applies the save's own rules, and the save's
+messages for a project with no `types` and for a new line with a state
+live there, so a menu never offers what the save refuses and both explain
+a refusal in the same words. For several cells it keeps only the values
+every cell may take. `nvim/complete.lua` shows them in Insert mode with
+`complete()`, called from a plain Lua mapping (from an `<expr>` mapping it
+fails), and as the buffer's `completefunc`; it loads a catalog the session
+has not loaded yet and opens the menu only if the cursor is still in the
+same cell. `nvim/pick.lua` shows them with `vim.ui.select` for `<leader>we`
+and writes the choice into each cell with `nvim/cells.lua`, then re-pads,
+so the write and its re-pad are one undo step. The views turn nvim-cmp off
+in their buffers (`require("cmp").setup.buffer({ enabled = false })`, also
+on `InsertEnter`, for a config that loads nvim-cmp then): nvim-cmp installs
+its Insert-mode keys only in buffers where it is enabled, so the views'
+buffer-local `<C-Space>` then wins over nvim-cmp's global one.
+
+Colours come in two kinds. What the text alone decides (separators,
+sub-area rows, headings) is drawn by syntax rules in `syntax/adoarea.lua`
+and `syntax/adoitem.lua`, which cost nothing per edit. What depends on the
+data is drawn by `nvim/decorations.lua` with extmarks, placed again after
+every change once the re-pad has run: the type cell in its type's ADO
+colour, a dot before the state cell in the state's colour (inline virtual
+text, the same width on every row, so the columns stay aligned on screen
+and `<C-v>` still selects a column), and a sign on each changed or new
+line. The colours are in the type catalog, from the `workitemtypes` call
+the session already makes; a view in every state, which loads no
+catalog, asks for its project's catalog once and is decorated again when
+it arrives. Which rows are changed or new comes from
+`core/row_changes.lua`, the comparison the change plan uses, so a marked
+row and the save summary cannot disagree. `nvim/highlights.lua` defines
+the `Ado*` groups as default links to standard groups, one `AdoColor_<hex>`
+group per ADO colour, and defines them again on `ColorScheme`.
+
 The browser URL (`<leader>wb`) runs the view's query in ADO's web UI. The
 web UI rejects URLs over about 3,050 characters (measured: 3,053 loads,
 3,061 gets HTTP 404), and the open-state condition for every type of a
@@ -104,6 +161,76 @@ returns the same items, because every open item of another type would have
 been loaded too. A truncated view (more items than `default_query_top`)
 keeps the condition for every type, since its loaded items may not show
 every type. A URL still over 3,000 characters is refused with a warning.
+
+### Fitting the window: cut cells and their full values
+
+Neovim scrolls a window sideways by every column before the cursor,
+including concealed text and inline virtual text, so a row is fitted by
+its real text: the row ID prefix and the state dot count towards its
+width, and one column stays free for the cursor after the last character
+in Insert mode. `core/table_layout.lua` picks the column widths for a text
+width (`budget`): columns whose cells are short keep their width, the
+title gets the rest and no less than 20 columns, and when that is not
+enough the tags collapse to `…`, the type shows as a letter, then the
+assignee shortens to 8 columns. A tags cell collapsed to `…` keeps its
+separator, so every row parses by the one rule above in any layout.
+
+A cell longer than its column is cut in the buffer text and ends in `…`
+(option T of plan 0002, chosen by the owner on 2026-10-15). The text
+alone no longer says what the cell holds, so each cell that has been cut
+or edited has a **shown map** in its row's registry entry
+(`nvim/fit.lua`): every text the cell has shown, paired with the value it
+stands for, starting with the loaded value. The rules that read it are
+pure, in `core/fit.lua`:
+
+- **Lookup.** A cell with no map is its text. A cell with a map has the
+  value the map gives its text, and no value at all for a text the map
+  does not know. A type is the exception: the save checks it against the
+  project's types, so a type typed over its letter is that type.
+- **Restore.** The re-pad after an edit (`nvim/realign.lua`) gives each
+  edited cut cell its full value back. A cut text is a head of the value
+  followed by `…`; when the edited text still ends in `…`, the edit lay in
+  the head, and the value is the new head followed by the part the text
+  before the edit hid (`table_layout.restore`). The cell is then cut again
+  and the map learns the new text, in the same undo step as the edit, so
+  after `u` or `<C-r>` the text in the buffer finds its value with no state
+  to rewind.
+- **The text before the edit.** The re-pad keeps a snapshot of every
+  cell's text and the undo state it was taken at. The snapshot is trusted
+  only when that state lies on the path from the undo tree's root to the
+  newest change; after a `u` the re-pad never saw, it is not, and the
+  hidden part is not known.
+- **Whole replacements.** `cic`, `dic`, a value picked from a menu
+  (`CompleteDone`), `<leader>we` and `<leader>wx` replace a cell whole, so
+  the next re-pad takes the text as the value instead of restoring it.
+- **Fail closed.** An edit that deleted the `…`, typed after it, or was
+  made from an untrusted state leaves the cell with no value. The map
+  records the text as having none, so editing it further keeps it so, and
+  `u` back to a known text, or typing the `…` back, recovers it. A text
+  that reads as a cut of the loaded value (a head of it followed by `…`)
+  in a cell with no map has no value either.
+
+Two guards stand between a cut text and ADO. `view_buffer.record` puts
+each cell's full value in the view record and names every cell with no
+value in the row's `ambiguous` list; `core/plan.lua` rejects such a row
+(UX5.4), leaves the cell out of the edits and the assignee lookups, and
+so a rejected save sends nothing. And the save summary shows every title
+change in full, old and new, before `y`.
+
+A cell shown in two lines (a copy, `yyp`) or pasted into another view has
+the same row ID and so the same map, which is how a paste between views
+of different widths finds its full values and is cut again to the new
+view's widths. The maps go with the registry entries, which a reload
+releases. A view with no unsaved edits is laid out again when a window
+showing it changes size (`WinResized`, `VimResized`, `BufWinEnter`), for
+the narrowest window showing it, rewriting only the lines that change
+and outside the undo history, as a load is. A view with unsaved edits
+keeps its layout, because the rewrite would be an undo step between the
+user's edits, and says so in its window bar. A typed new line has no row
+ID and so no map, and is never cut. `nvim/hover.lua` shows a cut row in
+full in a float, from `core/row_info.lua`, and `<leader>wx`
+(`nvim/reveal.lua`) writes a cell's full value into the buffer, where it
+stays uncut until the next render.
 
 ## Query lists
 
@@ -212,7 +339,9 @@ flowchart LR
 1. **View records.** For each modified view, `view_buffer.record` pairs the
    rows shown at the last load (from the row ID registry) with the rows
    parsed from the buffer now; a pasted row also carries its origin row.
-   The core never reads buffer text (R6.2).
+   A cell cut to fit the window carries its full value, and a cut cell
+   with no known value is named in the row's `ambiguous` list (see
+   "Fitting the window"). The core never reads buffer text (R6.2).
 2. **Prepare.** `plan.prepare` loads the type catalogs the state checks
    need (usually cached, so 0 calls), one `resolve_identity` per distinct
    edited assignee text (R5.19), and, for the cycle check (R5.12), the
@@ -389,7 +518,13 @@ since the load would replace the edits.
   equals a display name or email, else the only identity whose name or
   email starts with the text. None or several reject the save, naming the
   row. An empty column unassigns. The `az` transport searches ADO's people
-  picker with `az rest`, because `az devops invoke` cannot reach it.
+  picker with `az rest`, because `az devops invoke` cannot reach it. The
+  assignee menu and `<leader>we` insert the person's email rather than
+  the display name, so a person picked there always resolves to exactly
+  one identity, even when two people share a name. Their search
+  (`core/people.lua`, one per session through `Session:people()`) caches
+  ADO's answers by lower-case prefix; the save does not use that cache
+  and makes its own `resolve_identity` call per distinct text.
 - **Tags (R5.20).** The `;`-separated list replaces the item's tags; tags
   compare as a set without regard to case. The summary lists the tags
   added and removed. The save replaces the tags in the item's patch, and
@@ -490,3 +625,12 @@ write guard and the error notifier wrap whichever transport is configured.
    `tests.*` only. This enforces RFC 0001 R6.1: the core must not reference
    Neovim.
 4. Runs `tests/nvim/` specs with the real `vim`, against the fake transport.
+
+The presentation specs share one editor, so a spec that changes global state
+(the configuration, `vim.ui.select`) can change how a later spec runs. Each
+spec's setup calls `config.reset()` before `setup()`, and `make test
+ORDER=reverse` or `ORDER=shuffle` runs the spec files in another order to
+catch the next such leak. One was found this way: a `tests/nvim/session_spec.lua`
+case set `open_categories = { "Proposed" }`, which `setup()` merged into every
+later spec's configuration, so `tests/nvim/realign_spec.lua`, run after it,
+lost the rows in an in-progress state.

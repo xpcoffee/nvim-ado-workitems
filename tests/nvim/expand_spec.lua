@@ -40,7 +40,7 @@ test("<Tab> inserts the child rows under the right row, indented; <Tab> again re
   ok(inserted:find("^/%d+   Task%s+│"), inserted)
   for i = 1, at do eq(buffer_lines()[i], before[i], "line " .. i .. " is untouched") end
   eq(vim.bo[buf].modified, false)
-  local marks = vim.api.nvim_buf_get_extmarks(buf, -1, 0, -1, { type = "highlight" })
+  local marks = vim.api.nvim_buf_get_extmarks(buf, vim.api.nvim_get_namespaces().ado_view, 0, -1, {})
   eq(#marks, #buffer_lines(), "every line keeps its concealed prefix")
   key("<Tab>")
   eq(buffer_lines(), before)

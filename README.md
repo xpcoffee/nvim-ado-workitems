@@ -42,6 +42,8 @@ area view:
 | `[h` / `]h` | back / forward |
 | `<leader>wf` | set a filter: state (`open`, `all` or names), assignee (`@Me` or a name), types, tag |
 | `<leader>wu` | include items of every sub-area, and back |
+| `<leader>we` | pick a type, state or assignee for the cell under the cursor; in Visual mode, for that column of every selected row |
+| `<leader>wx` | show a cell cut to fit the window in full; in Visual mode, that column of every selected row |
 | `<leader>wb` | open the same query in the browser |
 | `<leader>wr` | reload |
 
@@ -104,6 +106,8 @@ buffer opens the panel for that item. In an item view:
 | `K` | show the item under the cursor in the detail split, keeping the cursor |
 | `gd` | open the item under the cursor in the detail split and move there |
 | `<leader>wt` | show children and links in every state, and back to open only |
+| `<leader>we` | pick a type, state or assignee for the cell or `type:`/`state:`/`assignee:` line under the cursor; in Visual mode, for that column of every selected row |
+| `<leader>wx` | show a cell, title or field value cut to fit the window in full |
 | `[h` / `]h` | back / forward, shared with the area view |
 | `<leader>wb` | open the item under the cursor in the browser |
 | `<leader>wr` | reload |
@@ -133,6 +137,67 @@ not attempted. Each work item's write is logged as one JSON line, listing
 its changes, in `stdpath("state")/ado-workitems/audit.log` (set
 `audit_log` in `setup()` to move it).
 
+Rows stay aligned while you edit. The spaces between cells are real text,
+so `<C-v>` over a column changes every selected row. After each change in
+Normal mode, and when Insert mode ends, the view rewrites the spaces that
+no longer line up; one `u` undoes your change and that rewrite together.
+While you type in Insert mode only the line you are editing drifts. `ic`
+selects the text of the cell under the cursor and `ac` adds its padding and
+separator, so `cic` on an assignee replaces the whole name, where `cw`
+would leave the surname. `require("ado").ux_stats()` prints how many
+rewrites, decorations and people searches ran and how long they took.
+
+Type and state cells have lists of values. In Insert mode, `<C-Space>`
+(or `<C-x><C-u>`) in a type or state cell, or on the item view's `type:`
+or `state:` line, opens a menu of the values the save accepts there: the
+project's configured `types` for a type, and the states of the row's type
+for a state, each with its state category. Typing narrows the menu, and the
+value picked replaces the cell's text. A state cell follows a type typed on
+the same line once that type is one the save would change the row to. A
+new line offers no states, since a new item starts in its type's initial
+state. In Normal mode, `<leader>we` opens the same values in
+`vim.ui.select` (your picker, if a plugin replaces it) and writes the
+choice into the cell; in Visual mode it writes into that column of every
+selected row, offering only the states every selected row's type has. One
+`u` undoes the whole write. The views turn nvim-cmp off in their own
+buffers and set `vim.b.completion = false`, which blink.cmp reads, so the
+plugin's menu is the only one there.
+
+Assignee cells search people by name. In Insert mode, `<C-Space>` (or
+`<C-x><C-u>`) in an assignee cell, or on the item view's `assignee:` line,
+opens a menu at once with the people assigned to rows in your open views
+and the people you picked earlier in the session, the most recent first.
+Each entry shows the display name with the email beside it. Picking one
+inserts the person's email rather than the name, because an email names
+exactly one person, so the save never finds it ambiguous. The cell holds
+the email, cut to the assignee column's width when it is wider (see
+"Fitting the window" below), until the next reload shows the display name
+again.
+
+Typing narrows the menu from the first character to people whose name,
+any word of the name, or email starts with what you typed, so `doe` finds
+`Janet Doe`. Once the cell holds 2 or more characters and you pause for
+200 ms, the plugin also searches ADO and adds the people it finds; the
+command line shows the search and its time, for example
+`[ado] people 'jan': 3 found in 0.31 s`. ADO returns at most 10 people per
+search, so type more of the name if the person is missing. Each prefix is
+searched once per session. A failed search shows one message per Insert
+session. In Normal mode, `<leader>we` on an assignee cell asks for a name,
+searches, and offers the matches and "unassign" in `vim.ui.select`; in
+Visual mode it writes the choice into every selected row.
+
+If the menu replaces the name you are typing with the first email, add
+`noselect` to your `'completeopt'`. The views do this themselves where
+Neovim lets `'completeopt'` be set per buffer (0.11 does), adding
+`menuone` and `noselect` to your value unless it has `noinsert`.
+
+The sign column shows `~` on a row whose columns differ from what was
+loaded and `+` on a typed line or a row pasted from another view, by the
+same comparison the save uses, so a marked row is a row the save summary
+lists. The window bar shows the view's counts on the right, with the rows
+edited, new and removed since the last load: `0 sub-areas · 6 items ·
+1 edited · 1 removed`.
+
 Rows can also be deleted, pasted, moved or added, and their type, assignee
 and tags changed; `docs/architecture.md` describes what each edit does.
 Every type a row sets must be one of its project's `types` in `setup()`:
@@ -143,6 +208,88 @@ save refuse, with the `setup()` entry to add and the project's types. A
 area row are read-only. While an
 item view has unsaved edits, `<Tab>` and `<leader>wt` are refused; save or
 reload (`<leader>wr`, which asks before discarding) first.
+
+## Fitting the window
+
+Rows fit the window they are shown in, so moving the cursor along a row
+never scrolls the view sideways. Columns whose cells are short keep their
+width and the title takes the rest. When the window is too narrow for
+every cell, the columns give way in this order: the tags collapse to `…`
+(the row still has tags), the type shows as one letter (`T` for Task, `S`
+for User Story: the first letter of the name's last word), then the
+assignee shortens to 8 columns. The title never gets fewer than 20
+columns, so in a window narrower than about 60 columns a row with long
+cells runs past it.
+
+A cell longer than its column is cut in the buffer and ends in `…`. The
+plugin keeps the full value, and the save sends full values only:
+
+- Editing the visible part of a cut cell (`x`, `cw`, typing in Insert
+  mode) keeps the hidden part. When the edit ends, the cell gets its full
+  value back with your change in it and is cut again, in the same undo
+  step, so `u` and `<C-r>` work as usual.
+- `cic`, a value picked from a menu, and `<leader>we` replace the whole
+  cell, so what you write becomes its full value.
+- Deleting the `…` or typing after it leaves the plugin unable to tell
+  what the full value should be. The save then refuses, naming the row:
+  undo the edit, or press `<leader>wx` on the cell and edit the full text.
+- `<leader>wx` shows the cell under the cursor in full, as a change `u`
+  undoes; in Visual mode it does so for that column on every selected
+  row. The cell stays in full until the view reloads.
+- The save summary shows every changed title in full before `y`.
+
+When the cursor rests for 300 ms on a cut cell, a one-letter type or a
+row with collapsed tags, a float beside it shows the whole row: ID, type,
+state, title, assignee with email, tags and area. It closes as soon as the
+cursor moves. In the item view, the item's own title line and its field
+values are cut the same way.
+
+Resizing a window, or opening and closing the detail split, lays an
+unedited view out again for its new width. A view with unsaved edits
+keeps its layout, because rewriting it would add an undo step between
+your edits; its window bar says `fits the window after :w or <leader>wr`.
+A view shown in two windows fits the narrower one. A new line you type is
+never cut, so a long title on it runs past its column.
+
+The letter a type shows as can be set per type. `ui` is one table, so
+put `type_letters` and `icons` (see "Colours") in the same one:
+
+```lua
+require("ado").setup({
+  ui = { type_letters = { ["Test Case"] = "C" } },
+})
+```
+
+## Colours
+
+Each type cell shows in its type's ADO colour, and a dot `●` in the
+state's ADO colour sits before each state, as ADO's boards show them. The
+colours come with the work item types the plugin loads once per project.
+ADO colours need `termguicolors`; without it, and for a type or state with
+no colour, the cells use `AdoType` and `AdoState`. Separators are dimmed,
+and sub-area rows and headings are marked. Every group links to a standard
+group, so a colour scheme colours the views; override any of them with
+`:highlight`:
+
+| Group | Links to | Draws |
+| --- | --- | --- |
+| `AdoType` | `Type` | a type without an ADO colour |
+| `AdoState` | `Constant` | the dot of a state without an ADO colour |
+| `AdoSeparator` | `NonText` | the `│` between cells |
+| `AdoAreaMark` | `Directory` | sub-area rows and the item view's area row |
+| `AdoHeading` | `Title` | the item view's section headings |
+| `AdoChanged` | `Changed` | the `~` sign |
+| `AdoNew` | `Added` | the `+` sign |
+| `AdoCount` | `Comment` | the counts in the window bar |
+
+The views set `signcolumn=yes:1` on their windows. The dot and the signs
+can be other characters, such as Nerd Font glyphs, each one column wide:
+
+```lua
+require("ado").setup({
+  ui = { icons = { state = "●", changed = "~", new = "+" } },  -- the defaults
+})
+```
 
 ## Editing in the detail buffer
 
@@ -160,6 +307,12 @@ Global (wired by the dotfiles spec): `require("ado").my_items()` / `.search()` /
 
 In a work-item buffer: `<CR>`/`i` edit field under cursor · `,wc` comment ·
 `,wS` state · `,we` description · `,wb` browser · `,wr` reload · `,wi` item view.
+
+In the area view, query lists and item view, besides the keys in their
+tables: `ic`/`ac` select a cell, `<C-Space>` (Insert mode) and
+`<leader>we` (Normal and Visual mode) list the values of a type or state
+cell, and search people for an assignee cell, and `<leader>wx` shows a
+cut cell in full.
 
 In the search picker: `<CR>` open · `<C-s>` change state · `<C-y>` yank id+url ·
 `<C-o>` browser · `<C-a>` re-runs the search in every state, and back.
@@ -185,6 +338,12 @@ In the search picker: `<CR>` open · `<C-s>` change state · `<C-y>` yank id+url
 `make test` runs every spec headless (`make test NVIM=/path/to/nvim` to pick a
 binary); `make test-core` runs only the core suite. No test starts a process:
 specs run against the fake transport in `tests/support/fake_transport.lua`.
+`make test ORDER=reverse` and `make test ORDER=shuffle` run the spec files in
+another order, which catches a spec that leaves state behind for the next;
+shuffle prints its seed, and `SEED=<n>` repeats that order. `make test
+ONLY=fit_spec` runs only the spec files whose path holds `fit_spec`.
+`make bench` times the re-pad, the decoration and the full layout of 200
+and 1,000 rows against the plan's targets.
 
 Modules under `lua/ado/core/` hold behaviour and never touch `vim`; the
 runner loads their specs in a sandbox that raises on `vim` and scans the

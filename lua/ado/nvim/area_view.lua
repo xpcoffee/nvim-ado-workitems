@@ -5,6 +5,7 @@
 local area_path = require("ado.core.area_path")
 local core = require("ado.core.area_view")
 local filters = require("ado.nvim.filters")
+local fit = require("ado.nvim.fit")
 local keymaps = require("ado.nvim.keymaps")
 local layout = require("ado.nvim.layout")
 local lines = require("ado.nvim.lines")
@@ -24,14 +25,14 @@ local function notify(msg, level)
   vim.notify("[ado] " .. msg, level or vim.log.levels.INFO)
 end
 
-local function winbar(loc, view)
-  local count = ""
-  if view then
-    count = string.format("  ·  %d sub-areas, %d items%s", #view.areas, #view.items,
-      view.truncated and string.format(" (first %d of %s%d)", #view.items,
-        view.total >= 1000 and "at least " or "", view.total) or "")
-  end
-  return area_path.normalise(loc.path) .. "  ·  " .. location.describe(loc) .. count
+local function winbar(loc)
+  return area_path.normalise(loc.path) .. "  ·  " .. location.describe(loc)
+end
+
+local function counts(view)
+  return string.format("%d sub-areas · %d items%s", #view.areas, #view.items,
+    view.truncated and string.format(" (first %d of %s%d)", #view.items,
+      view.total >= 1000 and "at least " or "", view.total) or "")
 end
 
 local function render(buf, view)
@@ -42,11 +43,11 @@ local function render(buf, view)
   for i, row in ipairs(view.rows) do
     ids[i] = registry.add({ kind = row.kind, view = name, row = row })
   end
-  local text = lines.render(view.rows, ids)
+  local text = fit.render(buf, view.rows, ids)
   if #text == 0 then text = { "" } end
   entry.view, entry.ids = view, ids
   view_buffer.set_lines(buf, text)
-  view_buffer.set_winbar(buf, winbar(entry.location, view))
+  view_buffer.set_winbar(buf, winbar(entry.location), counts(view))
 end
 
 -- opts.quiet leaves the command line alone, for a caller that reports the
@@ -62,7 +63,7 @@ function M.load(buf, opts)
   local label = area_path.name(loc.path)
   entry.loading = true
   view_buffer.set_editable(buf, false)
-  view_buffer.set_winbar(buf, winbar(loc) .. "  ·  loading")
+  view_buffer.set_winbar(buf, winbar(loc), "loading")
   core.load(session.get(), loc, {
     on_progress = function(done, total, what)
       echo(string.format("loading %s: %s (%d/%d)", label, what, done, total))
@@ -73,7 +74,7 @@ function M.load(buf, opts)
     view_buffer.set_editable(buf, true)
     if err then
       -- Transport errors are already reported by nvim/session.lua.
-      view_buffer.set_winbar(buf, winbar(loc) .. "  ·  load failed, <leader>wr retries")
+      view_buffer.set_winbar(buf, winbar(loc), "load failed, <leader>wr retries")
       return done_cb(err)
     end
     render(buf, view)
@@ -158,7 +159,11 @@ end
 -- Shows loc in the current window, loading it the first time its buffer is
 -- created. Called by layout.go.
 function M.show(loc)
-  local buf, created = view_buffer.get_or_create(location.uri(loc), "adoarea")
+  local buf, created = view_buffer.get_or_create(location.uri(loc), "adoarea", {
+    syntax = "adoarea",
+    ids = function(b) return state[b] and state[b].ids end,
+    project = function() return area_path.project(loc.path) end,
+  })
   if created then
     state[buf] = { location = loc, ids = {} }
     keymaps.area(buf, actions)

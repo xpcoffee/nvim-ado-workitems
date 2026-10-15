@@ -231,3 +231,54 @@ test("summary lists rejections first and offers no accept", function()
   eq(lines[2].text, "Rejected")
   eq(lines[3].kind, "rejection")
 end)
+
+-- Cut cells (plan 0002 UX5.4). The presentation layer puts each cut cell's
+-- full value in the record, and names the cut cells whose full value it
+-- could not restore in `ambiguous`.
+
+test("UX5.4 a cut cell with no known full value rejects the save, naming the row, and nothing is sent", function()
+  local s, fake = new()
+  local v = area(s, "P\\Team\\A")
+  local row = item_line(v, 101)
+  row.title = "Write A"
+  row.ambiguous = { "title" }
+  local writes = #fake.writes
+  local p = compute(s, { v })
+  eq(#p.rejections, 1)
+  eq(p.rejections[1].rule, "UX5.4")
+  eq(p.rejections[1].id, 101)
+  eq(p.rejections[1].message, "#101 (line " .. row.line .. ") in " .. v.key .. ": the title was cut to fit the window"
+    .. " and the … was edited, so its full text is not known; undo the edit, or press <leader>wx on the cell and"
+    .. " edit the full title")
+  local _, can_apply = summary.lines(p)
+  eq(can_apply, false)
+  eq(plan.applicable(p), false)
+  eq(#fake.writes, writes)
+end)
+
+test("UX5.4 a cut assignee with no known value rejects without looking it up", function()
+  local s, fake = new()
+  local v = area(s, "P\\Team\\A")
+  local row = item_line(v, 101)
+  row.assignee = "alex.jo…"
+  row.ambiguous = { "assignee" }
+  local calls = #fake.calls
+  local p = compute(s, { v })
+  eq(#fake.calls, calls, "no resolve_identity for the cut text")
+  eq(#p.rejections, 1)
+  ok(p.rejections[1].message:find("the assignee was cut", 1, true), p.rejections[1].message)
+end)
+
+test("UX5.4 a cut title left as it was plans nothing, and a restored edit plans the full new title", function()
+  local s = new()
+  local v = area(s, "P\\Team\\A")
+  -- The record holds the full value of a cell the buffer shows cut.
+  local p = compute(s, { v })
+  eq(p.ops, {})
+  item_line(v, 101).title = "Write the API, restored in full"
+  p = compute(s, { v })
+  eq(#p.ops, 1)
+  eq(p.ops[1].to, "Write the API, restored in full")
+  eq(texts(summary.lines(p))[3], "  #101 title: 'Write API' -> 'Write the API, restored in full'",
+    "the summary shows the full title")
+end)

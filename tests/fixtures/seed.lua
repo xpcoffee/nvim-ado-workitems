@@ -2,7 +2,8 @@
 -- (areas P\Team and A to D, duplicate titles, a slash in a title) and adds what
 -- later phases test: types with state categories, a state that is open for one
 -- type and finished for another (Resolved), Related links, two identities
--- matching "Alex", and an Issue for the write guard. Items 112 to 114 are
+-- matching "Alex", and an Issue for the write guard. Types and states carry
+-- ADO's colours, except Issue, which stands for a type listed without them. Items 112 to 114 are
 -- assigned to "me" in a Resolved (open for Bug, finished for User Story) or
 -- Discarded (Removed category) state, for the open-state filter.
 return {
@@ -16,23 +17,23 @@ return {
   },
   areas = { "P\\Team", "P\\Team\\A", "P\\Team\\B", "P\\Team\\C", "P\\Team\\D" },
   types = {
-    { name = "Task", states = {
-      { name = "To Do", category = "Proposed" },
-      { name = "Doing", category = "InProgress" },
-      { name = "Done", category = "Completed" },
-      { name = "Discarded", category = "Removed" },
+    { name = "Task", color = "A4880A", states = {
+      { name = "To Do", category = "Proposed", color = "b2b2b2" },
+      { name = "Doing", category = "InProgress", color = "007acc" },
+      { name = "Done", category = "Completed", color = "339933" },
+      { name = "Discarded", category = "Removed", color = "666666" },
     } },
-    { name = "User Story", states = {
-      { name = "New", category = "Proposed" },
-      { name = "Active", category = "InProgress" },
-      { name = "Resolved", category = "Resolved" },
-      { name = "Closed", category = "Completed" },
+    { name = "User Story", color = "009CCC", states = {
+      { name = "New", category = "Proposed", color = "b2b2b2" },
+      { name = "Active", category = "InProgress", color = "007acc" },
+      { name = "Resolved", category = "Resolved", color = "ff9d00" },
+      { name = "Closed", category = "Completed", color = "339933" },
     } },
-    { name = "Bug", states = {
-      { name = "New", category = "Proposed" },
-      { name = "Active", category = "InProgress" },
-      { name = "Resolved", category = "InProgress" },
-      { name = "Closed", category = "Completed" },
+    { name = "Bug", color = "CC293D", states = {
+      { name = "New", category = "Proposed", color = "b2b2b2" },
+      { name = "Active", category = "InProgress", color = "007acc" },
+      { name = "Resolved", category = "InProgress", color = "ff9d00" },
+      { name = "Closed", category = "Completed", color = "339933" },
     } },
     { name = "Issue", states = {
       { name = "To Do", category = "Proposed" },

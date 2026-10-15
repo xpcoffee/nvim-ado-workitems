@@ -123,13 +123,17 @@ test("work_item_types lists every type with state categories, or without on requ
   local fake = Fake.new(seed)
   fake.work_item_types({ project = "P" }, function(err, list)
     eq(err, nil)
-    eq(list[1], { name = "Task", isDisabled = false, states = {
-      { name = "To Do", category = "Proposed" }, { name = "Doing", category = "InProgress" },
-      { name = "Done", category = "Completed" }, { name = "Discarded", category = "Removed" } } })
+    eq(list[1], { name = "Task", isDisabled = false, color = "A4880A", states = {
+      { name = "To Do", category = "Proposed", color = "b2b2b2" },
+      { name = "Doing", category = "InProgress", color = "007acc" },
+      { name = "Done", category = "Completed", color = "339933" },
+      { name = "Discarded", category = "Removed", color = "666666" } } })
     eq(#list, #seed.types)
   end)
   fake.types_omit_categories = true
-  fake.work_item_types({ project = "P" }, function(_, list) eq(list[1].states[1], { name = "To Do" }) end)
+  fake.work_item_types({ project = "P" }, function(_, list)
+    eq(list[1].states[1], { name = "To Do", color = "b2b2b2" })
+  end)
 end)
 
 local function patched(fake, id, patch)

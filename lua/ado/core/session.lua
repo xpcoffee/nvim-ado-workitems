@@ -3,6 +3,7 @@
 -- methods; every callback is cb(err, result).
 local area_path = require("ado.core.area_path")
 local location = require("ado.core.location")
+local people = require("ado.core.people")
 local query = require("ado.core.query")
 local query_view = require("ado.core.query_view")
 local requests = require("ado.core.requests")
@@ -193,9 +194,17 @@ function Session:create(fields, cb)
 end
 
 -- The identities whose name or email starts with text:
--- { { display_name, unique_name, mail, id }... }.
-function Session:resolve_identity(text, cb)
-  self.transport.resolve_identity({ text = text }, cb)
+-- { { display_name, unique_name, mail, id }... }. opts.quiet: the caller
+-- reports a failure itself, so the presentation layer's notifier skips it.
+function Session:resolve_identity(text, cb, opts)
+  self.transport.resolve_identity({ text = text, quiet = opts and opts.quiet or nil }, cb)
+end
+
+-- The session's people search (core/people.lua), made on first use, so
+-- its cache and recent picks last as long as the session.
+function Session:people()
+  self.people_search = self.people_search or people.new(self)
+  return self.people_search
 end
 
 function Session:add_comment(id, text, cb)
@@ -251,6 +260,12 @@ function Session:catalog(project, cb)
     end
     for _, w in ipairs(waiters) do w(err, catalog) end
   end)
+end
+
+-- The project's catalog when it is already loaded, else nil; never calls.
+function Session:cached_catalog(project)
+  local entry = project and self.catalogs[project]
+  return entry and entry.catalog or nil
 end
 
 -- The catalog of every project in project_list(), in that order, loaded one

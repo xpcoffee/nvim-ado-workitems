@@ -35,7 +35,8 @@ local WIQL_LIMIT = 32000
 local WIQL_WARN_LENGTH = 16000
 
 -- Without this projection the types response carries every type's form XML
--- and field list: 1.2 MB on the Example project, against 8.5 KB.
+-- and field list: 1.2 MB on the Example project, against 11.4 KB with
+-- the colours (8.5 KB without them; measured 2026-10-13).
 -- The REST API versions each route was verified against on 2026-10-11; both
 -- return state categories.
 local TYPES_API_VERSION = "7.1"
@@ -49,8 +50,8 @@ local WORK_ITEMS_API_VERSION = "7.1"
 -- Resolving needs only "none", "one" or "several", so a few results do.
 local IDENTITY_MAX = 10
 
-local TYPES_PROJECTION = "value[].{name: name, isDisabled: isDisabled, "
-  .. "states: states[].{name: name, category: category}}"
+local TYPES_PROJECTION = "value[].{name: name, isDisabled: isDisabled, color: color, "
+  .. "states: states[].{name: name, category: category, color: color}}"
 
 -- opts:
 --   org         string                 ADO organisation name

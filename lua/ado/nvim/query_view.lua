@@ -4,6 +4,7 @@
 -- with :w (nvim/save.lua).
 local core = require("ado.core.query_view")
 local filters = require("ado.nvim.filters")
+local fit = require("ado.nvim.fit")
 local keymaps = require("ado.nvim.keymaps")
 local layout = require("ado.nvim.layout")
 local lines = require("ado.nvim.lines")
@@ -27,14 +28,14 @@ local function title(loc)
   return location.QUERIES[loc.name].title
 end
 
-local function winbar(loc, view)
-  local count = ""
-  if view then
-    count = string.format("  ·  %d items%s", #view.items,
-      view.truncated and string.format(" (first %d of %s%d)", #view.items,
-        view.total >= 1000 and "at least " or "", view.total) or "")
-  end
-  return title(loc) .. "  ·  " .. location.describe(loc) .. count
+local function winbar(loc)
+  return title(loc) .. "  ·  " .. location.describe(loc)
+end
+
+local function counts(view)
+  return string.format("%d items%s", #view.items,
+    view.truncated and string.format(" (first %d of %s%d)", #view.items,
+      view.total >= 1000 and "at least " or "", view.total) or "")
 end
 
 local function render(buf, view)
@@ -45,11 +46,11 @@ local function render(buf, view)
   for i, row in ipairs(view.rows) do
     ids[i] = registry.add({ kind = row.kind, view = name, row = row })
   end
-  local text = lines.render(view.rows, ids)
+  local text = fit.render(buf, view.rows, ids)
   if #text == 0 then text = { "" } end
   entry.view, entry.ids = view, ids
   view_buffer.set_lines(buf, text)
-  view_buffer.set_winbar(buf, winbar(entry.location, view))
+  view_buffer.set_winbar(buf, winbar(entry.location), counts(view))
 end
 
 -- opts as for nvim/area_view.lua load: quiet, on_done(err).
@@ -63,7 +64,7 @@ function M.load(buf, opts)
   local label = title(loc)
   entry.loading = true
   view_buffer.set_editable(buf, false)
-  view_buffer.set_winbar(buf, winbar(loc) .. "  ·  loading")
+  view_buffer.set_winbar(buf, winbar(loc), "loading")
   echo("loading " .. label)
   core.load(session.get(), loc, {}, function(err, view)
     entry.loading = false
@@ -73,7 +74,7 @@ function M.load(buf, opts)
       -- Transport errors are already reported by nvim/session.lua; the
       -- core's own (no project) is not.
       if err.kind == "invalid" then notify(err.message, vim.log.levels.WARN) end
-      view_buffer.set_winbar(buf, winbar(loc) .. "  ·  load failed, <leader>wr retries")
+      view_buffer.set_winbar(buf, winbar(loc), "load failed, <leader>wr retries")
       return done_cb(err)
     end
     render(buf, view)
@@ -132,7 +133,11 @@ end
 -- Shows loc in the current window, loading it the first time its buffer is
 -- created. Called by layout.go.
 function M.show(loc)
-  local buf, created = view_buffer.get_or_create(location.uri(loc), "adoquery")
+  local buf, created = view_buffer.get_or_create(location.uri(loc), "adoquery", {
+    syntax = "adoarea",
+    ids = function(b) return state[b] and state[b].ids end,
+    project = function() return session.get():default_project() end,
+  })
   if created then
     state[buf] = { location = loc, ids = {} }
     keymaps.query(buf, actions)

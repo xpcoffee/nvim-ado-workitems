@@ -23,6 +23,7 @@ function M.fresh(opts)
     area_paths = { "P/Team" }, area_filters = { state = "open" },
     link_types = { "System.LinkTypes.Hierarchy", "System.LinkTypes.Related" } }
   for k, v in pairs(opts) do if k ~= "seed" then c[k] = v end end
+  require("ado.config").reset()
   require("ado.config").setup(c)
   require("ado.nvim.session").reset()
   for _, m in ipairs({ "ado.nvim.area_view", "ado.nvim.query_view", "ado.nvim.item_view", "ado.nvim.layout",
