@@ -8,10 +8,28 @@ local actions = require("telescope.actions")
 local action_state = require("telescope.actions.state")
 local previewers = require("telescope.previewers")
 
-local detail = require("ado.nvim.detail")
+local browser = require("ado.nvim.browser")
+local markup = require("ado.nvim.markup")
 local session = require("ado.nvim.session")
 
 local M = {}
+
+-- Picks a valid state for an item with vim.ui.select.
+local function pick_state(item, cb)
+  local function could_not_load()
+    vim.notify("[ado] could not load states for " .. (item.type ~= "" and item.type or "?"),
+      vim.log.levels.WARN)
+  end
+  session.ensure_project(function(ok)
+    if not ok then return could_not_load() end
+    session.get():states(item.type, item.project, function(err, states)
+      if err or not states or #states == 0 then return could_not_load() end
+      vim.ui.select(states, { prompt = "State for #" .. item.id }, function(choice)
+        if choice then cb(choice) end
+      end)
+    end)
+  end)
+end
 
 -- id -> markdown description lines, so cursor movement doesn't re-convert.
 local preview_cache = {}
@@ -32,7 +50,7 @@ local function make_previewer()
       local item = entry.value
       local md = preview_cache[item.id]
       if not md then
-        md = detail.html_to_md(item.description_html)
+        md = markup.html_to_md(item.description_html)
         preview_cache[item.id] = md
       end
       if not vim.api.nvim_buf_is_valid(pbuf) then return end
@@ -62,12 +80,12 @@ local function open_picker(title, items, opts)
       actions.select_default:replace(function()
         local entry = action_state.get_selected_entry()
         actions.close(prompt_bufnr)
-        if entry then detail.open(entry.value.id) end
+        if entry then require("ado.nvim.layout").open_item(entry.value.id) end
       end)
       map({ "i", "n" }, "<C-s>", function()
         local entry = action_state.get_selected_entry()
         if not entry then return end
-        detail.pick_state(entry.value, function(state)
+        pick_state(entry.value, function(state)
           session.get():update_if_unchanged(entry.value, { state = state }, function(err)
             if err and err.kind == "conflict" then
               vim.notify("[ado] " .. err.message .. "; nothing was changed; reopen the list to see it",
@@ -86,7 +104,7 @@ local function open_picker(title, items, opts)
       end)
       map({ "i", "n" }, "<C-o>", function()
         local entry = action_state.get_selected_entry()
-        if entry then detail.browser_open(entry.value.url) end
+        if entry then browser.open(entry.value.url) end
       end)
       if opts.on_toggle_states then
         map({ "i", "n" }, "<C-a>", function()

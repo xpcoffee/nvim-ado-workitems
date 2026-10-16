@@ -7,6 +7,7 @@
 local config = require("ado.config")
 local core = require("ado.core.fit")
 local lines = require("ado.nvim.lines")
+local region = require("ado.nvim.region")
 local registry = require("ado.nvim.registry")
 local table_layout = require("ado.core.table_layout")
 local ux_stats = require("ado.nvim.ux_stats")
@@ -289,7 +290,7 @@ local roots = {}
 -- knows what an edited cell held before. settled: after an edit of the
 -- plugin's own (a load, an expansion), which clears the undo history.
 function M.snapshot(buf, settled)
-  local all = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  local all = region.lines(buf)
   local seq = vim.api.nvim_buf_call(buf, function() return vim.fn.changenr() end)
   if settled then roots[buf] = seq end
   local rows = {}

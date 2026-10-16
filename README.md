@@ -37,7 +37,7 @@ area view:
 
 | Key | Action |
 | --- | --- |
-| `<CR>` | enter a sub-area (filters carried), or open the item in the detail split and the item view panel |
+| `<CR>` | enter a sub-area (filters carried), or open the item in the item buffer beneath the list |
 | `-` | parent area |
 | `[h` / `]h` | back / forward |
 | `<leader>wf` | set a filter: state (`open`, `all` or names), assignee (`@Me` or a name), types, tag |
@@ -62,10 +62,10 @@ require("ado").setup({
 `require("ado").my_items()` lists the open work items assigned to you, in
 the configured projects, as rows of type, state, title, assignee and tags.
 It is an editable list like the area view, in the same window above the
-item view, named `ado://query/mine?state=open&type=&tag=`. It has the area
+item buffer, named `ado://query/mine?state=open&type=&tag=`. It has the area
 view's keys except the two that need an area (`-` for the parent area,
-`<leader>wu` for sub-area items): `<CR>` opens the item in the
-detail split and the item view, `[h` / `]h` walk the shared history,
+`<leader>wu` for sub-area items): `<CR>` opens the item in the item
+buffer, `[h` / `]h` walk the shared history,
 `<leader>wf` sets the state, type or tag filter (the assignee is always
 you), `<leader>wb` opens the query in the browser and `<leader>wr`
 reloads.
@@ -86,25 +86,43 @@ for no relationship, so:
 area view or the "my work items" list, or reopens the list it showed last,
 or asks for an area when none has been shown. The top window shows one
 list at a time: opening "my work items" or an area view replaces the other.
-`require("ado").toggle_item_view()` closes the item view, or opens it for
-the work item in the current detail buffer, or reopens the last item shown,
-or asks for an ID. `<leader>wi` in a detail buffer toggles the item view the
-same way.
+`require("ado").toggle_item_view()` closes the item window, or reopens the
+last item shown, or asks for an ID.
 
-## Item view
+The views stack in one column: the list (an area view or "my work items")
+on top, and the item buffer beneath it, which gets two thirds of the
+column's height while the list is open and all of it alone.
 
-`require("ado").item_view(id)` opens a panel for one work item: its title and
-fields, its parent, its area path, its children, then its Related links.
-Selecting an item in an area view opens it in the detail split and in this
-panel. `item_view()` with no ID asks for one; `<leader>wi` in a detail
-buffer opens the panel for that item. In an item view:
+## Item buffer
+
+`require("ado").item_view(id)` opens one buffer for a work item,
+`ado://item/<id>`. Selecting an item in an area view or "my work items",
+`require("ado").open(id)`, `open_prompt()` and `<CR>` in the search picker
+open it too, in the item window. `item_view()` with no ID asks for one.
+
+The buffer has two parts:
+
+1. The **header**: the item's title and its `type:`, `state:`,
+   `assignee:` and `tags:` lines, its parent, its area path, its children,
+   then its Related links. You edit it in place and save with `:w` (see
+   "Editing the views").
+2. Below a `── Details` line, the **details**: a `changed:` line with the
+   date, time and revision, and the description as markdown. The details
+   are read-only text: you can move through them, search and yank, but an
+   edit there makes `:w` refuse the whole save with "the details and
+   comments are read-only; u undoes the change, <leader>wr reloads".
+   Entering Insert mode there leaves it at once and says so.
+
+The window bar shows the item's ID, type, revision and changed time.
 
 | Key | Action |
 | --- | --- |
-| `<CR>` | go to the parent, child or linked item, or to the area view of the area row |
+| `<CR>` | go to the parent, child or linked item, or to the area view of the area row; on the description, edit it |
+| `gd` | the same as `<CR>` on a row |
 | `<Tab>` | show a child's own children beneath it, and hide them again |
-| `K` | show the item under the cursor in the detail split, keeping the cursor |
-| `gd` | open the item under the cursor in the detail split and move there |
+| `K` | show the item under the cursor in a float: its fields and the start of its description; `K` again enters the float |
+| `<leader>wd` | edit the description in a markdown float |
+| `<leader>wc` | write a comment in a markdown float; `<C-s>` sends it at once |
 | `<leader>wt` | show children and links in every state, and back to open only |
 | `<leader>we` | pick a type, state or assignee for the cell or `type:`/`state:`/`assignee:` line under the cursor; in Visual mode, for that column of every selected row |
 | `<leader>wx` | show a cell, title or field value cut to fit the window in full |
@@ -114,6 +132,21 @@ buffer opens the panel for that item. In an item view:
 
 Children and links show only open items by default; the headings say how
 many are hidden. The parent always shows.
+
+**The description** is edited in a markdown float (`<leader>wd`, or `<CR>`
+on it). `<C-s>` in the float does not write to ADO: it keeps the new text
+for the next `:w`, marks the buffer modified, shows the new text in the
+details with `~` signs, and the save sends it in the same one write as the
+item's other edits, listed in the summary as `#N description changed: 3
+lines added, 1 line removed`. Confirming the text as loaded keeps nothing.
+`u` does not undo a kept description; open the float again and restore
+the text, or reload (`<leader>wr` asks first).
+
+**A comment** (`<leader>wc`) is sent as soon as you confirm the float,
+because a comment notifies people and cannot be reviewed in the save
+summary like a field. It is refused while the buffer has unsaved edits:
+a comment raises the item's revision, so those edits could no longer be
+saved. After the comment the header reloads.
 
 ```lua
 require("ado").setup({
@@ -244,8 +277,8 @@ state, title, assignee with email, tags and area. It closes as soon as the
 cursor moves. In the item view, the item's own title line and its field
 values are cut the same way.
 
-Resizing a window, or opening and closing the detail split, lays an
-unedited view out again for its new width. A view with unsaved edits
+Resizing a window, or opening and closing the list, lays an unedited
+view out again for its new width. A view with unsaved edits
 keeps its layout, because rewriting it would add an undo step between
 your edits; its window bar says `fits the window after :w or <leader>wr`.
 A view shown in two windows fits the narrower one. A new line you type is
@@ -291,31 +324,21 @@ require("ado").setup({
 })
 ```
 
-## Editing in the detail buffer
-
-The detail buffer is read-only. Put the cursor on a field and press `<CR>` (or
-an insert key: `i`/`a`/`o`…) to open a focused floating editor for just that
-field: text fields get a one-line input, State a select, Description a markdown
-pane. Confirm with `<CR>` (`<C-s>` in the multi-line description), cancel with
-`q`/`<Esc>`. The float closes itself and the change saves on confirm (with a
-`rev` check); nothing to clean up.
-
 ## Keymaps
 
 Global (wired by the dotfiles spec): `require("ado").my_items()` / `.search()` /
-`.open_prompt()`.
+`.open_prompt()` / `.toggle_area_view()` / `.area_view()` /
+`.toggle_item_view()` / `.item_view()`.
 
-In a work-item buffer: `<CR>`/`i` edit field under cursor · `,wc` comment ·
-`,wS` state · `,we` description · `,wb` browser · `,wr` reload · `,wi` item view.
-
-In the area view, query lists and item view, besides the keys in their
+In the area view, query lists and item buffer, besides the keys in their
 tables: `ic`/`ac` select a cell, `<C-Space>` (Insert mode) and
 `<leader>we` (Normal and Visual mode) list the values of a type or state
 cell, and search people for an assignee cell, and `<leader>wx` shows a
 cut cell in full.
 
-In the search picker: `<CR>` open · `<C-s>` change state · `<C-y>` yank id+url ·
-`<C-o>` browser · `<C-a>` re-runs the search in every state, and back.
+In the search picker: `<CR>` opens the item buffer · `<C-s>` changes the
+state at once · `<C-y>` yanks id+url · `<C-o>` browser · `<C-a>` re-runs
+the search in every state, and back.
 
 ## Notes
 
@@ -331,7 +354,8 @@ In the search picker: `<CR>` open · `<C-s>` change state · `<C-y>` yank id+url
   query builders list them explicitly.
 - Text search uses WIQL `CONTAINS WORDS` (word/prefix over the index), not true
   full-text. Recent edits may lag the index.
-- Field edits use a client-side `rev` check against clobbering concurrent edits.
+- Every write is checked against the revision the view loaded, so a
+  concurrent edit in ADO is never overwritten.
 
 ## Development
 
@@ -343,7 +367,8 @@ another order, which catches a spec that leaves state behind for the next;
 shuffle prints its seed, and `SEED=<n>` repeats that order. `make test
 ONLY=fit_spec` runs only the spec files whose path holds `fit_spec`.
 `make bench` times the re-pad, the decoration and the full layout of 200
-and 1,000 rows against the plan's targets.
+and 1,000 rows, and the item buffer's read-only region, against the plans'
+targets.
 
 Modules under `lua/ado/core/` hold behaviour and never touch `vim`; the
 runner loads their specs in a sandbox that raises on `vim` and scans the

@@ -23,7 +23,7 @@ transport twice before handing it to the core:
 
 ```mermaid
 flowchart LR
-  UI["presentation<br/>picker, detail buffer"] --> S["core session<br/>core/session.lua"]
+  UI["presentation<br/>views, picker"] --> S["core session<br/>core/session.lua"]
   S --> N["error notifier<br/>nvim/session.lua"]
   N --> G["write guard (optional)<br/>core/write_guard.lua"]
   G --> T{"transport"}
@@ -274,16 +274,91 @@ An item location is the work item ID and the toggle. Its buffer is
 `ado://item/<id>` whatever the toggle, since the toggle only filters rows
 already loaded; the history still records the toggle as a step.
 
+### The item buffer: header, boundary and read-only region
+
+The item view's rows are the **header** of the item buffer (RFC 0003).
+`core/item_view.rows` ends them with a fixed **boundary row**, `── Details`.
+Below it the presentation layer writes the **read-only region** as plain
+text, without row IDs: the details (`core/item_details.lua`: a `changed:`
+line and the description as markdown, wrapped to the window). These lines
+are never rows, so the change plan never receives them.
+
+```text
+/1 Checkout story              header: rows with row IDs, edited and saved with :w
+/2   type:     User Story
+...
+/9 ── Related: 1
+/10 User Story │ New │ ...
+/11 ── Details                 boundary row: a fixed row, the last row
+    changed:   2026-10-01 11:00 · rev 1      read-only region: plain text
+    description:
+    Let customers pay at checkout.
+```
+
+`nvim/region.lua` keeps, per item buffer, an extmark on the boundary line
+and the text the plugin last wrote from the boundary on. The **header end**
+is the number of lines above the boundary: the extmark's line, or the line
+of a boundary row pasted higher up. Every module that reads buffer lines as
+rows reads them through `region.lines()` or checks `region.readable()`:
+the view record, the re-pad and fitting (`nvim/realign.lua`,
+`nvim/fit.lua`), conceal and refit (`nvim/view_buffer.lua`), decorations,
+the cell text objects, the Insert-mode menus, `<leader>wx` and the
+cut-cell float. A details line that holds `│` is therefore never re-padded,
+marked or offered a menu, and a line starting `/123 ` is never concealed.
+
+Neovim cannot make some lines read-only, so the save guards the region
+instead, and three rules reject a plan (`core/plan.lua`) before anything
+is sent for any view:
+
+- **Read-only text changed.** `item_view.record` compares the lines from
+  the boundary on with the text the plugin wrote, and passes the first line
+  that differs as `readonly_changed`; the plan rejects with "the details
+  and comments are read-only; u undoes the change, <leader>wr reloads".
+- **Boundary deleted or moved.** The record holds the header's rows and
+  then the boundary row when it is still where the header ends, so a
+  deleted or moved boundary rejects like any fixed line.
+- **Row below the boundary.** A row the plan reads after the boundary
+  row rejects; with the boundary in place this cannot happen, since the
+  record stops there.
+
+Entering Insert mode on the boundary or below runs `stopinsert` and says
+why, so most accidental edits never happen.
+
+The plugin's own writes into the region (a staged description, and the
+comment pages of phase 2 of plan 0003) must leave the user's header edits
+undoable. Neovim leaves a change out of the undo history only with
+`'undolevels'` at -1, and then clears the whole history.
+`nvim/quiet_edit.lua` therefore writes the history to an undo file
+(`:wundo`), makes the change, writes a second undo file for the new text,
+copies the second file's text hash and line count (the 36 bytes after the
+11-byte header) into the first, and reads it back with `:rundo`. The
+change adds no undo step, `u` still undoes the header edits made before
+it, and the modified flag is restored. If any step fails, the history is
+cleared, `ux_stats` counts `quiet_write_failed` and the user is warned
+once. `make bench` times it with 100 undo steps.
+
+**The description** is edited as markdown in a float and **staged**:
+`<C-s>` keeps the text, converted to HTML with pandoc, in the buffer's
+state, rewrites the details with a quiet write and marks the buffer
+modified (a `TextChanged` handler sets the flag again when `u` reaches the
+loaded header, because the history does not hold the staged text). The
+record carries it as `description = { html, added, removed }`, and the plan
+adds one `update` of `System.Description` to the item's ops, so it goes in
+the item's one patch after the `test` on `/rev`, and the summary lists
+"description changed". Text equal to the loaded description stages
+nothing.
+
 ## Layout and history
 
-`nvim/layout.lua` keeps up to three windows, one per role, stacked top to
-bottom in one column: the list (an area view or a query list), the item
-view panel, then the detail split. A role with nothing open has no window, and the open ones share the
-column's height equally. Selecting an
-item in a list shows it in the detail split and in the panel, and
-leaves the cursor in the panel. `K` in the panel shows the item under the
-cursor in the detail split without moving the cursor; `gd` moves to it.
-`<leader>wi` in a detail buffer opens the panel above it.
+`nvim/layout.lua` keeps up to two windows, one per role, stacked top to
+bottom in one column: the list (an area view or a query list) and the item
+buffer. A role with nothing open has no window. With both open, the item
+window gets two thirds of the column's height (`layout.ITEM_SHARE`), since
+it holds the details too; alone it takes the column. Selecting an item in
+a list, `open(id)`, `open_prompt()` and the search picker's `<CR>` show the
+item buffer in the item window and leave the cursor there. `K` shows the
+row's item in a float from one `get_work_item` call, keeping the cursor;
+`gd` does what `<CR>` does.
 
 A role reuses its window while that window is in the current tab and still
 shows a buffer of that role, so a window the user has put another buffer
@@ -454,27 +529,22 @@ Requests run in this order (`requests.group`):
    else in a save links to a new item, because a new line cannot be
    pasted anywhere before it exists.
 
-Edits made outside a save use the same route. A field edit in the detail
-buffer (title, state, assignee, tags, iteration, description) and a state
-change from the picker (`<C-s>`) go through `Session:update_if_unchanged`,
-which sends one `patch_work_item` that starts with a `test` on `/rev` at
-the rev the item was loaded at, then an `add` per field (`replace` for
-tags; `requests.fields_patch`). Nothing reads the item first. After a
-remote change ADO refuses the patch whole, and the user sees "[ado] #N
-changed remotely (rev R -> S); reload (,wr) before saving" in the detail
-buffer, or the same start and "nothing was changed" from the picker. The
-description goes as HTML, converted from the edited markdown with pandoc.
-An assignee edit in the detail buffer resolves the typed text as a save
-does (R5.19, "Column edits" below): one `resolve_identity`, and the patch
-is sent only when the text names exactly one identity. No match, or
-several, shows a warning that lists up to 5 of them and writes nothing.
-An empty text unassigns, and text in the `Name <email>` form, the form
-the detail buffer shows, is sent as the email without a lookup.
+One edit is made outside a save: a state change from the search picker
+(`<C-s>`) goes through `Session:update_if_unchanged`, which sends one
+`patch_work_item` that starts with a `test` on `/rev` at the rev the item
+was loaded at, then an `add` per field (`requests.fields_patch`). Nothing
+reads the item first. After a remote change ADO refuses the patch whole,
+and the user sees ADO's message followed by "nothing was changed; reopen
+the list to see it". The item buffer's description is staged for the save instead
+("The item buffer" above).
 
 Comments are the exception: `add_comment` still runs `az boards work-item
-update --discussion` with no rev check. A comment only appends to the
-item's discussion and changes no field, so a concurrent edit cannot be
-overwritten by it.
+update --discussion` with no rev check, as soon as the comment float is
+confirmed. A comment only appends to the item's discussion and changes no
+field, so a concurrent edit cannot be overwritten by it. It does raise the
+item's rev, so the item buffer refuses `<leader>wc` while it has unsaved
+edits, which would otherwise fail as changed remotely, and reloads its
+header after the comment.
 
 The order does not rule out every intermediate state ADO could refuse.
 Two moves that swap a parent and its child each pass ADO's cycle check on
@@ -527,9 +597,8 @@ since the load would replace the edits.
   and makes its own `resolve_identity` call per distinct text.
 - **Tags (R5.20).** The `;`-separated list replaces the item's tags; tags
   compare as a set without regard to case. The summary lists the tags
-  added and removed. The save replaces the tags in the item's patch, and
-  so does a tag edit in the detail buffer, because `az boards work-item
-  update` only adds tags.
+  added and removed. The save replaces the tags in the item's patch,
+  because ADO merges an `add` into the tags the item has.
 - **Type (R5.18, R5.21, R5.22, R8.6).** Only a type in the project's
   configured `types`, matched without regard to case. On an existing
   item anything else is "no change" with the reason; on a new line it

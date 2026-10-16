@@ -31,7 +31,7 @@ end
 -- The viewed item's field lines around line `at`: { [field] = { value,
 -- loaded } }, the text now and the value the view loaded.
 local function field_block(buf, at)
-  local all = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  local all = require("ado.nvim.region").lines(buf)
   local out = {}
   for _, step in ipairs({ -1, 1 }) do
     local i = at
@@ -52,6 +52,7 @@ end
 -- { line, index, cell (nvim/cells.lua), column, choice (a core/choices.lua
 -- cell) }. nil on a line without cells.
 function M.target(buf, at, col, index)
+  if not require("ado.nvim.region").readable(buf, at) then return nil end
   local line = vim.api.nvim_buf_get_lines(buf, at - 1, at, false)[1]
   if not line then return nil end
   local c = index and cells.nth(line, index) or (not index and cells.at(line, col))

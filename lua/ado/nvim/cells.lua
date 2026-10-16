@@ -139,7 +139,7 @@ function M.select(around)
   local visual = mode:find("^[vV\22]") ~= nil
   local row, col = unpack(vim.api.nvim_win_get_cursor(0))
   local line = vim.api.nvim_get_current_line()
-  local c = M.at(line, col + 1)
+  local c = require("ado.nvim.region").readable(0, row) and M.at(line, col + 1) or nil
   local first, last
   if c then first, last = M.span(line, c, around) end
   if not first then

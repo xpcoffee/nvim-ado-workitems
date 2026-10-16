@@ -41,7 +41,7 @@ test("<Tab> inserts the child rows under the right row, indented; <Tab> again re
   for i = 1, at do eq(buffer_lines()[i], before[i], "line " .. i .. " is untouched") end
   eq(vim.bo[buf].modified, false)
   local marks = vim.api.nvim_buf_get_extmarks(buf, vim.api.nvim_get_namespaces().ado_view, 0, -1, {})
-  eq(#marks, #buffer_lines(), "every line keeps its concealed prefix")
+  eq(#marks, #views.row_lines(buf), "every row line keeps its concealed prefix")
   key("<Tab>")
   eq(buffer_lines(), before)
   eq(#env.fake.calls, calls + 1, "collapse makes no call")

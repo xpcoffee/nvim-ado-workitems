@@ -63,16 +63,15 @@ function M.toggle_area_view()
   if not require("ado.nvim.layout").toggle_list() then M.area_view() end
 end
 
--- Closes the item view, else opens it for the work item in the current
--- detail buffer, else reopens the last item shown, else asks for an ID.
+-- Closes the item window, else reopens the last item shown, else asks for
+-- an ID.
 function M.toggle_item_view()
   M.setup()
-  local id = vim.api.nvim_buf_get_name(0):match("^ado://(%d+)$")
-  if not require("ado.nvim.layout").toggle_item(tonumber(id)) then M.item_view() end
+  if not require("ado.nvim.layout").toggle_item() then M.item_view() end
 end
 
--- Opens the item view for id, or for an ID typed at a prompt. From a detail
--- buffer the item view opens beside it.
+-- Opens the item buffer for id, or for an ID typed at a prompt, in the item
+-- window.
 function M.item_view(id)
   M.setup()
   local function open(value)
@@ -98,9 +97,9 @@ function M.ux_stats()
   return lines
 end
 
+-- Opens the item buffer for id in the item window (RFC 0003 C6.4).
 function M.open(id)
-  M.setup()
-  require("ado.nvim.detail").open(id)
+  M.item_view(id)
 end
 
 function M.open_prompt()
@@ -112,7 +111,7 @@ function M.open_prompt()
       vim.notify("[ado] invalid work item id: " .. input, vim.log.levels.WARN)
       return
     end
-    require("ado.nvim.detail").open(id)
+    M.item_view(id)
   end)
 end
 

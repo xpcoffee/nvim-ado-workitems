@@ -1,6 +1,6 @@
--- The item view buffer on the fake transport: rows, labels, navigation and
--- history, the all-states toggle, preview, the area row, the detail
--- buffer's <leader>wi and the browser URL.
+-- The item buffer on the fake transport: rows, labels, navigation and
+-- history, the all-states toggle, the K float, the area row, the entry
+-- points and the browser URL.
 local views = require("tests.support.views")
 local key, parsed, cursor_to = views.key, views.parsed, views.cursor_to
 
@@ -21,8 +21,10 @@ test("item_view(id) opens ado://item/<id> in a window beneath the current one, r
   eq(vim.fn.winlayout()[1], "col")
   eq(parsed(buf), { "Checkout story", "Parent: none", "P\\Team\\A", "Children: 2", "Write API", "Add tests",
     "Related: 1", "Payments story" })
-  eq(vim.wo.winbar, "#100 User Story  ·  children and links: open only (<leader>wt for all)"
-    .. "%=%#AdoCount#2 children · 1 linked%*")
+  local changed = os.date("%Y-%m-%d %H:%M", require("ado.core.timestamp").parse("2026-10-01T09:00:00Z"))
+  eq(vim.wo.winbar, "#100 User Story  ·  rev 1  ·  changed " .. changed
+    .. "  ·  children and links: open only (<leader>wt for all)%=%#AdoCount#2 children · 1 linked%*",
+    "C1.4 ID, type, rev and changed time")
   local labels = vim.api.nvim_buf_get_extmarks(buf, vim.api.nvim_get_namespaces().ado_view_labels, 0, -1,
     { details = true })
   eq(#labels, 1)
@@ -74,49 +76,73 @@ test("<leader>wt shows a finished child with no call, and [h returns to open onl
   eq(#env.fake.calls, calls)
 end)
 
-test("R4.3 moving the cursor in the item view calls nothing and leaves the detail split alone", function()
+test("R4.3 moving the cursor in the item buffer calls nothing", function()
   local env = views.fresh()
   open(100)
-  cursor_to("Write API")
-  key("K")
-  local detail = env.layout.window("detail")
   local calls = #env.fake.calls
   for line = 1, vim.api.nvim_buf_line_count(0) do vim.api.nvim_win_set_cursor(0, { line, 0 }) end
   key("j")
   eq(#env.fake.calls, calls)
-  eq(views.buf_name(detail), "ado://101")
+  eq(#vim.api.nvim_list_wins(), 2, "no other window was opened")
 end)
 
-test("K previews in a detail split and keeps the cursor; gd moves to the detail buffer", function()
+-- The floating preview window open now, if any.
+local function preview_window()
+  for _, w in ipairs(vim.api.nvim_list_wins()) do
+    if vim.api.nvim_win_get_config(w).relative ~= "" then return w end
+  end
+end
+
+test("C6.7 K shows the row's item in a float with one call and keeps the cursor; gd does what <CR> does", function()
   local env = views.fresh()
   open(100)
   local panel = vim.api.nvim_get_current_win()
   cursor_to("Write API")
+  local calls = #env.fake.calls
   key("K")
-  eq(vim.api.nvim_get_current_win(), panel)
-  local detail = env.layout.window("detail")
-  ok(detail, "a detail split exists")
-  eq(views.buf_name(detail), "ado://101")
-  eq(vim.fn.win_screenpos(detail)[1] > vim.fn.win_screenpos(panel)[1], true, "the detail is beneath the panel")
-  cursor_to("Add tests")
-  key("K")
-  eq(env.layout.window("detail"), detail, "the split is reused")
-  eq(views.buf_name(detail), "ado://102")
+  eq(#env.fake.calls, calls + 1)
+  eq(env.fake.calls[#env.fake.calls].op, "get_work_item")
+  eq(vim.api.nvim_get_current_win(), panel, "the cursor stays")
+  local float = preview_window()
+  ok(float, "a float shows the item")
+  local text = vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(float), 0, -1, false)
+  eq(text[1], "#101 Task · To Do")
+  eq(text[2], "Write API")
+  eq(#vim.api.nvim_list_wins(), 3, "the float is the only new window")
   cursor_to("Payments story")
   key("gd")
-  eq(vim.api.nvim_get_current_win(), detail)
-  eq(views.buf_name(), "ado://105")
+  eq(vim.api.nvim_get_current_win(), panel)
+  eq(views.buf_name(), "ado://item/105")
 end)
 
-test("<CR> on a link keeps an open detail split on the selected item", function()
-  local env = views.fresh()
+test("K shows the start of the description, and a float with no description says so", function()
+  views.fresh()
   open(100)
+  cursor_to("Checkout story")
+  key("K")
+  local text = vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(preview_window()), 0, -1, false)
+  eq(text[#text - 1], "description:")
+  eq(text[#text], "<p>Let customers pay at checkout.</p>", "without pandoc, the HTML as it is")
+  vim.cmd("doautocmd CursorMoved")
+  vim.wait(20)
+  eq(preview_window(), nil, "moving the cursor closes the float")
   cursor_to("Write API")
   key("K")
-  cursor_to("Payments story")
+  text = vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(preview_window()), 0, -1, false)
+  eq(text[#text], "description: (none)")
+end)
+
+test("<CR> on the item's own title and field lines does nothing", function()
+  local env = views.fresh()
+  open(100)
+  local calls = #env.fake.calls
+  cursor_to("Checkout story")
   key("<CR>")
-  eq(views.buf_name(), "ado://item/105")
-  eq(views.buf_name(env.layout.window("detail")), "ado://105")
+  cursor_to("state: Active")
+  key("<CR>")
+  eq(views.buf_name(), "ado://item/100")
+  eq(#env.fake.calls, calls)
+  eq(#vim.api.nvim_list_wins(), 2)
 end)
 
 test("A0001-5 <CR> on the area row lands in the area view of that path with default filters", function()
@@ -130,16 +156,17 @@ test("A0001-5 <CR> on the area row lands in the area view of that path with defa
   eq(views.buf_name(), "ado://item/102")
 end)
 
-test("<leader>wi in a detail buffer opens the item view beside it", function()
+test("C6.4 open() and open_prompt() open the item buffer in the item window", function()
   local env = views.fresh()
   require("ado").open(101)
-  local detail = vim.api.nvim_get_current_win()
-  key("<leader>wi")
   eq(views.buf_name(), "ado://item/101")
-  eq(env.layout.window("detail"), detail)
-  cursor_to("Checkout story")
-  key("K")
-  eq(views.buf_name(detail), "ado://100", "the detail buffer's window is the detail split")
+  eq(env.layout.window("item"), vim.api.nvim_get_current_win())
+  local input = vim.ui.input
+  vim.ui.input = function(_, cb) cb("102") end
+  require("ado").open_prompt()
+  vim.ui.input = input
+  eq(views.buf_name(), "ado://item/102")
+  eq(env.layout.window("item"), vim.api.nvim_get_current_win(), "the same window")
   eq(#vim.api.nvim_list_wins(), 2)
 end)
 

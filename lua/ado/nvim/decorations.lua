@@ -7,6 +7,7 @@ local config = require("ado.config")
 local fit = require("ado.nvim.fit")
 local highlights = require("ado.nvim.highlights")
 local lines = require("ado.nvim.lines")
+local region = require("ado.nvim.region")
 local registry = require("ado.nvim.registry")
 local row_changes = require("ado.core.row_changes")
 local table_layout = require("ado.core.table_layout")
@@ -93,7 +94,7 @@ end
 function M.refresh(buf, ctx)
   local started = vim.uv.hrtime()
   local icons = M.icons()
-  local text = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  local text = region.lines(buf)
   local snapshot = {}
   for i, rid in ipairs(ctx.ids or {}) do
     local reg = registry.get(rid)

@@ -38,14 +38,15 @@ function M.show(visual)
     if first > last then first, last = last, first end
     vim.cmd("normal! \27")
   end
+  local region = require("ado.nvim.region")
   local line = vim.api.nvim_get_current_line()
-  local c = cells.at(line, col + 1)
+  local c = region.readable(buf, at) and cells.at(line, col + 1) or nil
   if not c then return notify("<leader>wx shows a cut cell in full; this line has no cells") end
   if not vim.bo[buf].modifiable then return notify("the view is loading; try again once it has loaded") end
   local column = cells.column(line, c)
   local index = (c.count > 1) and c.index or nil
   local shown, reloaded = 0, 0
-  for n = first, last do
+  for n = first, math.min(last, region.last_row(buf)) do
     local text = vim.api.nvim_buf_get_lines(buf, n - 1, n, false)[1]
     local cell = index and cells.nth(text, index) or (n == at and c) or nil
     local id = tonumber(text:match("^/(%d+) "))

@@ -17,6 +17,10 @@ local function item(id, title)
   return "#" .. id .. " " .. quote(title)
 end
 
+local function plural(n, one, many)
+  return string.format("%d %s", n, n == 1 and one or (many or one .. "s"))
+end
+
 local function link_label(op)
   return op.name or op.rel:match("([^.]+)$")
 end
@@ -50,6 +54,9 @@ function M.op_text(op, created)
   elseif op.name == "assignee" then
     local from = (op.from == nil or op.from == "") and "none" or quote(op.from)
     return string.format("#%d assignee: %s -> %s", op.id, from, op.to_label == "none" and "none" or quote(op.to_label))
+  elseif op.name == "description" then
+    return string.format("#%d description changed: %s added, %s removed", op.id,
+      plural(op.added or 0, "line"), plural(op.removed or 0, "line"))
   elseif op.name == "tags" and op.added then
     local parts = {}
     for _, change in ipairs({ { "added", op.added }, { "removed", op.removed } }) do
@@ -136,10 +143,6 @@ function M.request_label(req)
   if not c then return "#" .. req.id end
   if c.copy_of then return string.format("copy of #%d", c.copy_of) end
   return string.format("new %s %s", c.type, quote(c.title))
-end
-
-local function plural(n, one, many)
-  return string.format("%d %s", n, n == 1 and one or (many or one .. "s"))
 end
 
 -- The kinds the one-line result counts, in its order.

@@ -63,6 +63,10 @@ function M.normalise(raw, org)
     -- out; only query results that select it are definite.
     parent = tonumber(f["System.Parent"]),
     changed = (f["System.ChangedDate"] or ""):sub(1, 10),
+    changed_at = f["System.ChangedDate"] or "",
+    -- nil when the response left the field out (a query that did not
+    -- select it).
+    comment_count = tonumber(f["System.CommentCount"]),
     description_html = f["System.Description"] or "",
     -- az boards query omits _links, so synthesise the edit URL when absent.
     url = url or urls.item(org, raw.id),

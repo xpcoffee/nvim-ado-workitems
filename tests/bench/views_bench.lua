@@ -1,5 +1,8 @@
 -- Timings of the views' re-pad (plan 0002 phase 1), decoration (phase 2)
--- and full layout fitted to the window (phase 5) at 200 and 1,000 rows:
+-- and full layout fitted to the window (phase 5) at 200 and 1,000 rows,
+-- and of the item buffer's read-only region (plan 0003): a header edit
+-- with 1,000 read-only lines below it, and a write below the header that
+-- keeps the undo history:
 --   make bench
 -- Not part of `make test`, because timings vary by machine. Prints the
 -- median and largest of each case against the plan's targets, and the
@@ -142,6 +145,59 @@ for _, n in ipairs({ 200, 1000 }) do
       "< " .. c[5], ok and "ok" or "MISSED"))
   end
 end
+
+-- An item buffer: 30 header rows, the boundary row, then `below` lines of
+-- read-only text, each with a separator, as a comment quoting a row would.
+local function item_buffer(below)
+  local ids = {}
+  local buf = view_buffer.get_or_create("ado://bench/item/" .. below, "adoitemview", { syntax = "adoitem",
+    ids = function() return ids end, project = function() return "Bench" end,
+    catalog = function() return CATALOG end })
+  vim.api.nvim_set_current_buf(buf)
+  local data = rows(30)
+  table.insert(data, { kind = "heading", slot = "boundary", label = "Details" })
+  for i, r in ipairs(data) do ids[i] = registry.add({ kind = r.kind, view = "bench", row = r }) end
+  local text = fit.render(buf, data, ids)
+  local header = #text
+  for i = 1, below do text[#text + 1] = "    comment line " .. i .. " │ quoting │ a row" end
+  view_buffer.set_lines(buf, text, { line = header, row_id = ids[#ids] })
+  return buf, header
+end
+
+-- Plan 0003 targets: the read-only lines add under 1 ms to a header
+-- edit's TextChanged, and a write below the header that keeps 100 undo
+-- steps takes under 25 ms.
+local READONLY_EXTRA, QUIET_WRITE = 1, 25
+local plain = item_buffer(0)
+local _, _, plain_changed = measure(plain, function(i) set_cell(plain, 1, 3, i % 2 == 0 and "fix" or "fix it") end)
+local item = item_buffer(1000)
+local _, _, item_changed = measure(item, function(i) set_cell(item, 1, 3, i % 2 == 0 and "fix" or "fix it") end)
+local extra = item_changed - plain_changed
+local extra_ok = extra < READONLY_EXTRA
+if not extra_ok then missed = missed + 1 end
+table.insert(out, string.format("%-6s %-16s %8s %10s %10s %14.2f %6s %s", "item", "1,000 below", "-", "-", "-",
+  item_changed, string.format("%+.2f", extra) .. " < " .. READONLY_EXTRA, extra_ok and "ok" or "MISSED"))
+for i = 1, 100 do
+  set_cell(item, 1, 3, "edit " .. i)
+  realign.run(item)
+end
+local steps = vim.api.nvim_buf_call(item, function() return vim.fn.undotree().seq_last end)
+local quiet = {}
+for i = 1, RUNS do
+  local n = vim.api.nvim_buf_line_count(item)
+  quiet[i] = time(function()
+    view_buffer.replace_readonly(item, n - 1, n, { "    a comment " .. i, "    its text", "", "── more" })
+  end)
+end
+local kept = vim.api.nvim_buf_call(item, function() return vim.fn.undotree().seq_last end) == steps
+local quiet_max = math.max(unpack(quiet))
+local quiet_ok = kept and quiet_max < QUIET_WRITE
+if not quiet_ok then missed = missed + 1 end
+table.insert(out, string.format("%-6s %-16s %8s %10.2f %10.2f %14s %6s %s", "item", "quiet write", "-",
+  median(quiet), quiet_max, kept and "history kept" or "HISTORY LOST", "< " .. QUIET_WRITE,
+  quiet_ok and "ok" or "MISSED"))
+
+
 io.stdout:write(table.concat(out, "\n") .. "\n")
 io.stdout:write(string.format("%d runs per case; Neovim %s\n", RUNS, tostring(vim.version())))
 os.exit(missed == 0 and 0 or 1)

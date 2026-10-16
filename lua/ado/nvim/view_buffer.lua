@@ -6,7 +6,9 @@ local decorations = require("ado.nvim.decorations")
 local fit = require("ado.nvim.fit")
 local highlights = require("ado.nvim.highlights")
 local lines_mod = require("ado.nvim.lines")
+local quiet_edit = require("ado.nvim.quiet_edit")
 local realign = require("ado.nvim.realign")
+local region = require("ado.nvim.region")
 local registry = require("ado.nvim.registry")
 local session = require("ado.nvim.session")
 
@@ -115,11 +117,13 @@ local function in_insert()
   return vim.api.nvim_get_mode().mode:sub(1, 1) == "i"
 end
 
--- Conceals the row ID prefix of every line, including lines the user has
--- pasted or typed, by reading it from the text.
+-- Conceals the row ID prefix of every row line, including lines the user
+-- has pasted or typed, by reading it from the text. A comment line that
+-- starts like a row ID is read-only text and keeps its start (RFC 0003
+-- C2.5).
 local function conceal(buf)
   vim.api.nvim_buf_clear_namespace(buf, NS, 0, -1)
-  for i, line in ipairs(vim.api.nvim_buf_get_lines(buf, 0, -1, false)) do
+  for i, line in ipairs(region.lines(buf)) do
     local prefix = line:match("^/%d+ ")
     if prefix then vim.api.nvim_buf_set_extmark(buf, NS, i - 1, 0, { end_col = #prefix, conceal = "" }) end
   end
@@ -177,6 +181,7 @@ function M.get_or_create(name, filetype, opts)
       if not word or word == "" then return end
       local cells = require("ado.nvim.cells")
       local row, col = unpack(vim.api.nvim_win_get_cursor(0))
+      if not region.readable(buf, row) then return end
       local line = vim.api.nvim_get_current_line()
       local c = cells.at(line, math.max(col, 1))
       if c then fit.replacing(buf, row, cells.column(line, c), word) end
@@ -207,17 +212,23 @@ end
 -- Changes lines whether or not the view is modifiable, keeping its modified
 -- flag. The change is left out of the undo history, so `u` cannot undo a
 -- load or an expansion into an empty or half-shown view, and is not
--- re-padded: the lines render aligned.
-local function edit(buf, change)
+-- re-padded: the lines render aligned. The history itself is cleared,
+-- unless keep_history, for a write below the header that must leave the
+-- user's header edits undoable (nvim/quiet_edit.lua).
+local function edit(buf, change, keep_history)
   local modified, modifiable = vim.bo[buf].modified, vim.bo[buf].modifiable
-  local undolevels = vim.bo[buf].undolevels
   vim.bo[buf].modifiable = true
-  vim.bo[buf].undolevels = -1
-  change()
-  vim.bo[buf].undolevels = undolevels
+  if keep_history then
+    quiet_edit.run(buf, change)
+  else
+    local undolevels = vim.bo[buf].undolevels
+    vim.bo[buf].undolevels = -1
+    change()
+    vim.bo[buf].undolevels = undolevels
+  end
   vim.bo[buf].modifiable = modifiable
   vim.bo[buf].modified = modified
-  realign.settle(buf)
+  realign.settle(buf, keep_history)
 end
 
 local function set(buf, first, last, lines)
@@ -230,12 +241,31 @@ function M.set_editable(buf, editable)
   if vim.api.nvim_buf_is_valid(buf) then vim.bo[buf].modifiable = editable end
 end
 
-function M.set_lines(buf, lines)
-  edit(buf, set(buf, 0, -1, lines))
+-- boundary: for an item buffer, { line, row_id } of its `── Details`
+-- row; the lines from it on are read-only (nvim/region.lua).
+function M.set_lines(buf, lines, boundary)
+  edit(buf, function()
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    if boundary then
+      region.set(buf, boundary.line, boundary.row_id, vim.list_slice(lines, boundary.line))
+    else
+      region.clear(buf)
+    end
+  end)
   vim.bo[buf].modified = false
   vim.api.nvim_buf_clear_namespace(buf, LABELS, 0, -1)
   conceal(buf)
   M.decorate(buf, true)
+end
+
+-- Replaces lines first to last - 1 (0-based) of an item buffer's
+-- read-only text, outside the undo history and keeping it, so the header's
+-- unsaved edits stay undoable (RFC 0003 C2.6, C2.7). Records the read-only
+-- text the buffer then holds.
+function M.replace_readonly(buf, first, last, lines)
+  edit(buf, set(buf, first, last, lines), true)
+  local n = region.header_end(buf)
+  if n then region.set_readonly(buf, vim.api.nvim_buf_get_lines(buf, n, -1, false)) end
 end
 
 -- Inserts lines before line `at` (0-based) without redrawing the others,
@@ -277,7 +307,7 @@ function M.refit(buf)
     return
   end
   local ids = v.opts.ids and v.opts.ids(buf) or {}
-  local current = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  local current = region.lines(buf)
   if vim.bo[buf].modified or not vim.bo[buf].modifiable or #ids == 0 or #ids ~= #current then
     if stale ~= width then
       fit.set_stale(buf, width)
@@ -342,7 +372,7 @@ function M.record(buf, kind, state_filter, ids, extra)
     loaded[rid] = true
   end
   local current = {}
-  for i, text in ipairs(vim.api.nvim_buf_get_lines(buf, 0, -1, false)) do
+  for i, text in ipairs(region.lines(buf)) do
     local p = lines_mod.parse(text)
     local reg = p.row_id and registry.get(p.row_id)
     if reg and reg.row.kind == "item" and reg.row.slot == "self" then

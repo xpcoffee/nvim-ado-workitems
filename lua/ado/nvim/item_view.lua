@@ -1,14 +1,22 @@
--- The item view buffer (RFC 0001 R3): one buffer per work item, named
--- ado://item/<id>. Titles and states are edited in place and saved with :w
--- (nvim/save.lua). It shows in the item panel that nvim/layout.lua keeps
--- between the area view and the detail split.
+-- The item buffer (RFC 0001 R3, RFC 0003): one buffer per work item, named
+-- ado://item/<id>. Its header is the item view: its rows are edited in
+-- place and saved with :w (nvim/save.lua). Below the `── Details` row it
+-- shows the details as read-only text (nvim/region.lua); the description
+-- is edited in a float and staged for the next :w. It shows in the item
+-- window that nvim/layout.lua keeps beneath the list.
+local browser = require("ado.nvim.browser")
 local config = require("ado.config")
 local core = require("ado.core.item_view")
+local details = require("ado.core.item_details")
 local fit = require("ado.nvim.fit")
+local float = require("ado.nvim.float")
 local keymaps = require("ado.nvim.keymaps")
 local layout = require("ado.nvim.layout")
+local lines_mod = require("ado.nvim.lines")
 local location = require("ado.core.location")
+local markup = require("ado.nvim.markup")
 local progress = require("ado.nvim.progress")
+local region = require("ado.nvim.region")
 local registry = require("ado.nvim.registry")
 local session = require("ado.nvim.session")
 local urls = require("ado.core.urls")
@@ -17,8 +25,16 @@ local view_buffer = require("ado.nvim.view_buffer")
 local M = {}
 
 -- buf -> { location, view, display (nil until loaded), ids = { row id per
--- line }, expanding = { [id] = true } }
+-- header line }, expanding = { [id] = true }, description = the loaded
+-- description as markdown lines, staged = { markdown, html, added,
+-- removed } | nil, details = { count = lines below the boundary row,
+-- description = { first, last } of the description's lines, counted from
+-- the boundary row } }
 local state = {}
+
+local DETAILS_NS = vim.api.nvim_create_namespace("ado_details")
+
+local READONLY = "the details and comments are read-only; <leader>wd edits the description"
 
 local LABELS = { self = "this item", parent = "parent" }
 
@@ -26,10 +42,18 @@ local function notify(msg, level)
   vim.notify("[ado] " .. msg, level or vim.log.levels.INFO)
 end
 
+local function local_time(epoch)
+  return os.date("%Y-%m-%d %H:%M", epoch)
+end
+
 local function winbar(entry)
   local loc = entry.location
   local text = "#" .. loc.id
-  if entry.view then text = text .. " " .. entry.view.item.type end
+  if entry.view then
+    local it = entry.view.item
+    text = string.format("%s %s  ·  rev %s  ·  changed %s", text, it.type, tostring(it.rev),
+      details.time(it.changed_at, local_time))
+  end
   text = text .. "  ·  " .. (loc.all and "children and links: all states"
     or "children and links: open only (<leader>wt for all)")
   if entry.view and entry.view.truncated then text = text .. "  ·  links truncated" end
@@ -52,6 +76,28 @@ local function add_ids(name, rows)
   return ids
 end
 
+-- The lines below the boundary row: the details, from the staged
+-- description when there is one.
+local function details_lines(buf, entry)
+  local description = entry.staged and entry.staged.markdown or entry.description
+  local out, range = details.lines(entry.view.item, description, { format_time = local_time,
+    width = (fit.window_width(buf) or (vim.o.columns - 2)) - 1, measure = lines_mod.measure })
+  entry.details = { count = #out, description = range }
+  return out
+end
+
+-- A staged description's lines carry the change sign, as edited rows do.
+local function mark_details(buf, entry)
+  vim.api.nvim_buf_clear_namespace(buf, DETAILS_NS, 0, -1)
+  local boundary = region.boundary(buf)
+  if not entry.staged or not boundary then return end
+  local icon = require("ado.nvim.decorations").icons().changed
+  for i = entry.details.description.first, entry.details.description.last do
+    vim.api.nvim_buf_set_extmark(buf, DETAILS_NS, boundary + i - 1, 0, { sign_text = icon,
+      sign_hl_group = "AdoChanged" })
+  end
+end
+
 local function render(buf)
   local entry = state[buf]
   registry.release(entry.ids)
@@ -59,7 +105,10 @@ local function render(buf)
   local ids = add_ids(vim.api.nvim_buf_get_name(buf), rows)
   local text = fit.render(buf, rows, ids)
   entry.ids = ids
-  view_buffer.set_lines(buf, text)
+  local boundary = #text
+  vim.list_extend(text, details_lines(buf, entry))
+  view_buffer.set_lines(buf, text, { line = boundary, row_id = ids[#ids] })
+  mark_details(buf, entry)
   local labels = {}
   for i, row in ipairs(rows) do
     if row.kind == "item" and LABELS[row.slot] then labels[i - 1] = LABELS[row.slot] end
@@ -98,6 +147,8 @@ function M.load(buf, opts)
     entry.view = view
     entry.display = core.display(view, entry.location)
     entry.expanding = {}
+    entry.description = markup.html_to_md(view.item.description_html)
+    entry.staged = nil
     render(buf)
     local linked = 0
     for _, s in ipairs(view.sections) do linked = linked + #s.items end
@@ -141,33 +192,176 @@ end
 
 local actions = {}
 
+-- The description's lines (1-based) while the read-only text is as the
+-- plugin wrote it, else nil.
+local function description_lines(buf, entry)
+  local boundary = region.boundary(buf)
+  if not boundary or not entry.details or region.readonly_changed(buf) then return nil end
+  local d = entry.details.description
+  return boundary + d.first, boundary + d.last
+end
+
+-- Opens the description in a markdown float; <C-s> stages the edit for
+-- the next :w instead of writing it (RFC 0003 C3.2 to C3.4), so every edit
+-- of the item goes in one revision-checked patch.
+function actions.description()
+  local buf, entry = current()
+  if not entry or not entry.view then return end
+  if not vim.bo[buf].modifiable then return notify("the item is loading; try again once it has loaded") end
+  if not description_lines(buf, entry) then
+    return notify("the details were edited; undo the change (u) before editing the description",
+      vim.log.levels.WARN)
+  end
+  local view = entry.view
+  float.text({
+    title = string.format("Description of #%d  (<C-s> keeps it for :w · q cancels)", view.item.id),
+    lines = entry.staged and entry.staged.markdown or entry.description,
+    filetype = "markdown",
+    multiline = true,
+    width = math.floor(vim.o.columns * 0.7),
+    height = math.floor(vim.o.lines * 0.6),
+    on_confirm = function(new_lines) M.stage_description(buf, view, new_lines) end,
+  })
+end
+
+local function line_counts(old, new)
+  local added, removed = 0, 0
+  local hunks = vim.diff(table.concat(old, "\n") .. "\n", table.concat(new, "\n") .. "\n",
+    { result_type = "indices" })
+  for _, h in ipairs(hunks) do
+    removed = removed + h[2]
+    added = added + h[4]
+  end
+  return added, removed
+end
+
+-- Stages new_lines (markdown) as the description of the item buffer buf
+-- loaded as view, and shows them in the details. Text equal to the loaded
+-- description stages nothing and drops a staged edit.
+function M.stage_description(buf, view, new_lines)
+  local entry = state[buf]
+  if not entry or entry.view ~= view or not vim.api.nvim_buf_is_valid(buf) then
+    return notify("the item reloaded while the description was open; nothing was kept", vim.log.levels.WARN)
+  end
+  local boundary = region.boundary(buf)
+  if not boundary or region.readonly_changed(buf) then
+    return notify("the details were edited; undo the change (u), then edit the description again",
+      vim.log.levels.WARN)
+  end
+  local was = entry.staged
+  if vim.deep_equal(new_lines, entry.description) then
+    if not was then return notify("description unchanged") end
+    entry.staged = nil
+  elseif was and vim.deep_equal(new_lines, was.markdown) then
+    return notify("description unchanged")
+  else
+    local added, removed = line_counts(entry.description, new_lines)
+    entry.staged = { markdown = new_lines, html = markup.md_to_html(new_lines), added = added, removed = removed }
+  end
+  local old_count = entry.details.count
+  local text = details_lines(buf, entry)
+  view_buffer.replace_readonly(buf, boundary, boundary + old_count, text)
+  mark_details(buf, entry)
+  if entry.staged then
+    vim.bo[buf].modified = true
+    notify("description changed; :w saves it with the item's other edits")
+  else
+    notify("description back as loaded")
+  end
+end
+
 function actions.select()
-  local reg, _, _, entry = row_under_cursor()
+  local buf, entry = current()
+  if not entry or not entry.display then return end
+  local line = vim.api.nvim_win_get_cursor(0)[1]
+  if not region.readable(buf, line) then
+    local first, last = description_lines(buf, entry)
+    if first and line >= first and line <= last then return actions.description() end
+    return
+  end
+  local reg = row_under_cursor()
   if not reg then return end
-  local row = reg.row
-  if row.kind == "item" and row.slot == "self" then return layout.show_detail(row.id) end
-  local loc = core.select(entry.display, row, config.get().area_filters)
-  if not loc then return end
-  if loc.kind == "item" then layout.sync_detail(loc.id) end
-  layout.go(loc)
+  local loc = core.select(entry.display, reg.row, config.get().area_filters)
+  if loc then layout.go(loc) end
 end
 
 actions.back = layout.back
 actions.forward = layout.forward
 
 local function item_id()
-  local reg = row_under_cursor()
-  return reg and reg.row.kind == "item" and reg.row.id or nil
+  local reg, line, buf = row_under_cursor()
+  if not reg or not region.readable(buf, line) then return nil end
+  return reg.row.kind == "item" and reg.row.id or nil
 end
+
+-- K: the row's item in a float beside the cursor, from one get_work_item
+-- call (RFC 0003 C6.7). The float closes when the cursor moves.
+M.PREVIEW_DESCRIPTION_LINES = 12
 
 function actions.preview()
   local id = item_id()
-  if id then layout.show_detail(id, { focus = false }) end
+  if not id then return end
+  local win = vim.api.nvim_get_current_win()
+  local cursor = vim.api.nvim_win_get_cursor(win)
+  session.get():get(id, function(err, item)
+    if err or not vim.api.nvim_win_is_valid(win) or vim.api.nvim_get_current_win() ~= win
+        or not vim.deep_equal(vim.api.nvim_win_get_cursor(win), cursor) then
+      return
+    end
+    local out = {
+      string.format("#%d %s · %s", item.id, item.type, item.state),
+      item.title,
+      "",
+      "assignee: " .. (item.assignee_display ~= "" and item.assignee_display or "none"),
+      "tags:     " .. item.tags,
+      "area:     " .. item.area,
+      "changed:  " .. details.time(item.changed_at, local_time),
+      "",
+    }
+    local md = markup.html_to_md(item.description_html)
+    if #md == 1 and md[1] == "" then
+      table.insert(out, "description: (none)")
+    else
+      table.insert(out, "description:")
+      for i = 1, math.min(#md, M.PREVIEW_DESCRIPTION_LINES) do table.insert(out, md[i]) end
+      if #md > M.PREVIEW_DESCRIPTION_LINES then table.insert(out, "…") end
+    end
+    vim.lsp.util.open_floating_preview(out, "markdown", { focus_id = "ado_item_preview", max_width = 80,
+      max_height = 24, border = "rounded" })
+  end)
 end
 
-function actions.detail()
-  local id = item_id()
-  if id then layout.show_detail(id) end
+-- <leader>wc: a comment typed in a markdown float, sent as soon as the
+-- float is confirmed, through the write guard. A comment notifies people,
+-- so it is not staged for :w. Refused while the item has unsaved edits:
+-- the comment raises the item's rev, and the next :w would then fail as
+-- changed remotely.
+function actions.comment()
+  local buf, entry = current()
+  if not entry or not entry.view then return end
+  if vim.bo[buf].modified then
+    return notify("save (:w) or reload (<leader>wr) first: a comment raises the item's revision, so the"
+      .. " unsaved edits could no longer be saved", vim.log.levels.WARN)
+  end
+  local id = entry.view.item.id
+  float.text({
+    title = string.format("Comment on #%d  (<C-s> sends it now · q cancels)", id),
+    lines = { "" },
+    filetype = "markdown",
+    multiline = true,
+    width = math.floor(vim.o.columns * 0.6),
+    height = math.floor(vim.o.lines * 0.4),
+    on_confirm = function(text)
+      if not table.concat(text, "\n"):find("%S") then return notify("empty comment; nothing was sent") end
+      session.get():add_comment(id, markup.md_to_html(text), function(err)
+        if err then return end
+        notify("commented on #" .. id)
+        if vim.api.nvim_buf_is_valid(buf) and state[buf] == entry and not vim.bo[buf].modified then
+          M.load(buf, { quiet = true, after_comment = true })
+        end
+      end)
+    end,
+  })
 end
 
 local function refuse_if_modified(buf, what)
@@ -236,7 +430,7 @@ function actions.browser()
   local _, entry = current()
   if not entry then return end
   local id = item_id() or entry.location.id
-  require("ado.nvim.detail").browser_open(urls.item(session.get().org, id))
+  browser.open(urls.item(session.get().org, id))
 end
 
 function actions.reload()
@@ -267,6 +461,16 @@ function M.show(loc, opts)
   if created then
     state[buf] = { location = loc, ids = {}, expanding = {} }
     keymaps.item(buf, actions)
+    region.guard_insert(buf, READONLY)
+    -- A staged description is an unsaved edit that the undo history does
+    -- not hold, so `u` back to the loaded header must not clear the flag.
+    vim.api.nvim_create_autocmd({ "TextChanged", "BufModifiedSet" }, {
+      buffer = buf,
+      callback = function()
+        local e = state[buf]
+        if e and e.staged and not vim.bo[buf].modified then vim.bo[buf].modified = true end
+      end,
+    })
     vim.api.nvim_create_autocmd("BufWipeout", {
       buffer = buf,
       callback = function()
@@ -294,11 +498,24 @@ function M.show(loc, opts)
 end
 
 -- The view record for the change plan, or nil until the view has loaded.
+-- It holds the header's rows only, with the staged description and where
+-- the read-only text first differs from what the plugin wrote.
 function M.record(buf)
   local entry = state[buf]
   if not entry or not entry.display then return nil end
-  return view_buffer.record(buf, "item", entry.display.location.all and "all" or "open", entry.ids,
+  local record = view_buffer.record(buf, "item", entry.display.location.all and "all" or "open", entry.ids,
     core.plan_fields(entry.view))
+  record.readonly_changed = region.readonly_changed(buf)
+  if entry.staged then
+    record.description = { html = entry.staged.html, added = entry.staged.added, removed = entry.staged.removed }
+  end
+  return record
+end
+
+-- Whether the buffer has unsaved edits, a staged description included.
+function M.modified(buf)
+  local entry = state[buf]
+  return vim.bo[buf].modified or (entry ~= nil and entry.staged ~= nil)
 end
 
 function M.busy(buf)

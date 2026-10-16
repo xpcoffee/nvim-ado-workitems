@@ -13,10 +13,17 @@
 --            filters (core/location.lua), for R5.13
 --     query lists add filters, for R5.13; their rows stand for no
 --            relationship (R9.4)
---     item views add rel = item id, item = { id, rev, area, project, parent },
+--     item views add rel = item id, item = { id, rev, area, project, parent,
+--            description_html },
 --            link_names = { [rel] = display name },
 --            known = { links = { [rel] = { id... } } }, every link loaded,
---            including those the state filter hides
+--            including those the state filter hides; and from the item
+--            buffer (RFC 0003): readonly_changed = the first line of the
+--            details or comments that differs from what the plugin wrote
+--            there, or nil (C2.2), and description = { html, added,
+--            removed } when a description edit is staged (C3.3). current
+--            holds the lines above the `── Details` boundary row, then
+--            that row when it is where it was rendered (C2.1, C2.3).
 --   snapshot row = a core view row (area_view.lua, item_view.lua) plus
 --            row_id and line
 --   current row  = { row_id | nil, line, kind, title, state, type, assignee,
@@ -32,7 +39,8 @@
 --   plan = { ops = { op... }, notes = { note... }, rejections = { rejection... } }
 --   op   = { kind, id, expect_rev, views = { key... }, ... } where kind is
 --            "update"     field, name, from, to; an assignee update adds
---                         to_label, a tags update added and removed
+--                         to_label, a tags update added and removed, a
+--                         description update added and removed (lines)
 --            "set_type"   field, name = "type", from, to, and state_from,
 --                         state_to when the same call sets the state (R5.22)
 --            "set_area"   field, name = "area", from, to, title
@@ -185,6 +193,7 @@ local function region_after(s)
   if s.kind == "area" then return "arearow" end
   if s.slot == "parent" then return "parent" end
   if s.slot == "children" then return "children" end
+  if s.slot == "boundary" then return "boundary" end
   return "link:" .. s.rel
 end
 
@@ -574,6 +583,10 @@ function M.compute(views, prepared)
     end
     local out = classify(view, reject)
     sorted[vi] = out
+    if view.readonly_changed then
+      reject(view, view.readonly_changed, nil, "C2.2",
+        "the details and comments are read-only; u undoes the change, <leader>wr reloads")
+    end
 
     -- UX5.4: a cut value must never reach ADO, so a row with a cut cell
     -- whose full value is not known rejects whatever else it edits.
@@ -768,6 +781,9 @@ function M.compute(views, prepared)
         elseif r.region == "self" then
           reject(view, r.c.line, s.id, "R5", "rows cannot be pasted among the item's own lines;"
             .. " move the line under the parent row, the Children heading or a link heading")
+        elseif r.region == "boundary" then
+          reject(view, r.c.line, s.id, "C2.1", "rows cannot be pasted below the Details line; move the line"
+            .. " under the parent row, the Children heading or a link heading")
         elseif r.region == "arearow" then
           reject(view, r.c.line, s.id, "R5.11", "rows cannot be pasted on the area row: only area views change"
             .. " an item's area; paste it into an area view, or under a heading")
@@ -1215,6 +1231,18 @@ function M.compute(views, prepared)
     end
 
     if changed then final[id] = v end
+  end
+
+  -- ── staged descriptions (RFC 0003 C3.3, C7.5) ───────────────────────────────
+  -- One field update of the viewed item, in the same request as its other
+  -- edits.
+  for _, view in ipairs(views) do
+    local d = view.kind == "item" and view.description
+    if d then
+      table.insert(buckets.update, { kind = "update", id = view.rel, field = workitem.FIELD_REFS.description,
+        name = "description", from = view.item.description_html, to = d.html, added = d.added,
+        removed = d.removed, views = { view.key } })
+    end
   end
 
   -- ── items the destination view will hide (R5.13) ────────────────────────────

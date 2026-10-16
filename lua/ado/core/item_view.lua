@@ -18,7 +18,11 @@
 --       | { kind = "field", slot = "self", id, field, value } (the viewed
 --           item's metadata, one line per field beneath its title)
 --       | { kind = "area", slot = "area", path, name }
---       | { kind = "heading", slot = "parent" | "children" | "link", rel, label }
+--       | { kind = "heading", slot = "parent" | "children" | "link" | "boundary", rel, label }
+--
+-- The last row is the boundary row, `── Details` (RFC 0003 C7.4): a fixed
+-- row below which the item buffer shows the details and comments as plain
+-- text, never as rows.
 local location = require("ado.core.location")
 local transport = require("ado.core.transport")
 local workitem = require("ado.core.workitem")
@@ -218,6 +222,8 @@ end
 
 M.SELF_FIELDS = { "type", "state", "assignee", "tags" }
 
+M.BOUNDARY_LABEL = "Details"
+
 -- Every row of a display, in R3.1 order: the item and its fields, its parent,
 -- its area, its children, then each link section.
 function M.rows(display)
@@ -245,6 +251,7 @@ function M.rows(display)
     table.insert(out, { kind = "heading", slot = "link", rel = s.rel, label = heading(display, s, shown) })
     for _, it in ipairs(shown) do table.insert(out, item_row(it, "link", 0, { rel = s.rel })) end
   end
+  table.insert(out, { kind = "heading", slot = "boundary", label = M.BOUNDARY_LABEL })
   return out
 end
 
@@ -290,7 +297,8 @@ function M.plan_fields(view)
   local it = view.item
   return {
     rel = it.id,
-    item = { id = it.id, rev = it.rev, area = it.area, project = it.project, parent = it.parent },
+    item = { id = it.id, rev = it.rev, area = it.area, project = it.project, parent = it.parent,
+      description_html = it.description_html },
     link_names = names,
     known = { links = known },
   }

@@ -119,7 +119,7 @@ function actions.browser()
   if not entry or not entry.view then return end
   local url, err = core.browser_url(session.get().org, entry.view)
   if not url then return notify(err.message, vim.log.levels.WARN) end
-  require("ado.nvim.detail").browser_open(url)
+  require("ado.nvim.browser").open(url)
 end
 
 M.actions = actions

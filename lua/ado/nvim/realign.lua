@@ -6,6 +6,7 @@
 -- joined to the change with :undojoin, so one `u` undoes both. During
 -- Insert mode only the edited line drifts.
 local fit = require("ado.nvim.fit")
+local region = require("ado.nvim.region")
 local ux_stats = require("ado.nvim.ux_stats")
 
 local M = {}
@@ -15,13 +16,15 @@ local aligned = {}
 
 -- Marks the buffer's text as aligned, for a change the plugin made itself
 -- (a load, an expansion, a save's reload), which renders aligned.
-function M.settle(buf)
+-- kept_history: the change left the undo history in place (a write below
+-- an item buffer's header), so the history has no new root.
+function M.settle(buf, kept_history)
   aligned[buf] = vim.api.nvim_buf_get_changedtick(buf)
-  fit.snapshot(buf, true)
+  fit.snapshot(buf, not kept_history)
 end
 
 local function plan(buf, user)
-  return fit.plan(buf, vim.api.nvim_buf_get_lines(buf, 0, -1, false), user)
+  return fit.plan(buf, region.lines(buf), user)
 end
 
 -- The cursor column after edits (byte ranges of the body, offset bytes

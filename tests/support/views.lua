@@ -13,6 +13,14 @@ local executable = vim.fn.executable
 function M.fresh(opts)
   opts = opts or {}
   vim.o.columns, vim.o.lines = 200, 50
+  for _, w in ipairs(vim.api.nvim_list_wins()) do
+    if vim.api.nvim_win_get_config(w).relative ~= "" then pcall(vim.api.nvim_win_close, w, true) end
+  end
+  vim.cmd("silent! only")
+  -- Headless Neovim keeps the first window at 80 columns after 'columns'
+  -- grows, until a split rebuilds the layout; without this, a spec run
+  -- first (ORDER=shuffle) fits its rows to 80 columns.
+  vim.cmd("silent! vsplit")
   vim.cmd("silent! only")
   vim.cmd("silent! %bwipeout!")
   local fake = Fake.new(opts.seed or seed)
@@ -60,11 +68,24 @@ function M.key(keys)
   vim.api.nvim_feedkeys(vim.keycode(keys), "x", false)
 end
 
--- What each line shows: a sub-area or area name, a heading, a title, or
--- "<field>: <value>" for the viewed item's field lines.
+-- The row lines of a view: in an item buffer, up to its `── Details` row.
+function M.row_lines(buf)
+  return require("ado.nvim.region").lines(buf or 0)
+end
+
+-- The lines below an item buffer's `── Details` row: its details and
+-- comments.
+function M.readonly_lines(buf)
+  buf = buf or vim.api.nvim_get_current_buf()
+  return vim.api.nvim_buf_get_lines(buf, require("ado.nvim.region").last_row(buf), -1, false)
+end
+
+-- What each row line shows: a sub-area or area name, a heading, a title, or
+-- "<field>: <value>" for the viewed item's field lines. An item buffer's
+-- rows end with its "Details" heading.
 function M.shown(buf)
   local out = {}
-  for _, l in ipairs(vim.api.nvim_buf_get_lines(buf or 0, 0, -1, false)) do
+  for _, l in ipairs(M.row_lines(buf)) do
     local p = lines.parse(l)
     if p.kind == "field" then
       table.insert(out, p.field .. ": " .. p.value)
@@ -75,13 +96,14 @@ function M.shown(buf)
   return out
 end
 
--- As shown(), without the viewed item's field lines, so section specs
--- need not repeat them.
+-- As shown(), without the viewed item's field lines and the closing
+-- Details row, so section specs need not repeat them.
 function M.parsed(buf)
   local out = {}
-  for _, l in ipairs(vim.api.nvim_buf_get_lines(buf or 0, 0, -1, false)) do
+  for _, l in ipairs(M.row_lines(buf)) do
     local p = lines.parse(l)
-    if p.kind ~= "field" then
+    local reg = p.row_id and require("ado.nvim.registry").get(p.row_id)
+    if p.kind ~= "field" and not (reg and reg.row.slot == "boundary") then
       table.insert(out, p.kind == "area" and p.name or p.kind == "heading" and p.label or p.title)
     end
   end

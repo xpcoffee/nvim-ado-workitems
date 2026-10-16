@@ -1,7 +1,7 @@
--- Window layout and navigation for the views (RFC 0001 R4.1, R4.2, R9.2):
--- one column of stacked windows, one per role: the list on top (an area
--- view or a query list), the item view beneath it, then the detail
--- buffer, each present only when open. Each role reuses its window while
+-- Window layout and navigation for the views (RFC 0001 R4.1, R4.2, R9.2,
+-- RFC 0003 C6): one column of stacked windows, one per role: the list on
+-- top (an area view or a query list) and the item buffer beneath it, each
+-- present only when open. Each role reuses its window while
 -- that window is in the current tab and still shows a buffer of the role,
 -- so a window the user has put another buffer in is left alone. Every
 -- location shares one history.
@@ -16,7 +16,6 @@ M.history = history.new()
 local FILETYPES = {
   list = { adoarea = true, adoquery = true },
   item = { adoitemview = true },
-  detail = { adoitem = true },
 }
 
 local wins = {}
@@ -45,22 +44,30 @@ local function split(from, cmd)
   return vim.api.nvim_get_current_win()
 end
 
-local ORDER = { "list", "item", "detail" }
+local ORDER = { "list", "item" }
 
--- Gives the open role windows equal heights, leaving other windows alone.
--- Reads wins directly: a window just claimed still shows the buffer it was
--- split from until its view loads, so win_of would drop it.
+-- The item window's share of the column when the list is open too (RFC
+-- 0003 C6.2): it holds the header, the details and the comments.
+M.ITEM_SHARE = 2 / 3
+
+-- Splits the column between the open role windows, leaving other windows
+-- alone. Reads wins directly: a window just claimed still shows the buffer
+-- it was split from until its view loads, so win_of would drop it.
 local function balance()
   local open, total = {}, 0
   local tab = vim.api.nvim_get_current_tabpage()
   for _, role in ipairs(ORDER) do
     local win = wins[role]
     if win and vim.api.nvim_win_is_valid(win) and vim.api.nvim_win_get_tabpage(win) == tab then
-      table.insert(open, win)
+      open[role] = win
       total = total + vim.api.nvim_win_get_height(win)
     end
   end
-  for _, win in ipairs(open) do vim.api.nvim_win_set_height(win, math.floor(total / #open)) end
+  if open.list and open.item then
+    local item = math.floor(total * M.ITEM_SHARE + 0.5)
+    vim.api.nvim_win_set_height(open.list, total - item)
+    vim.api.nvim_win_set_height(open.item, item)
+  end
 end
 
 -- A new window for `role` in its place in the column: below the nearest
@@ -92,12 +99,7 @@ end
 
 -- The list takes the current window when no view window is open yet.
 local function focus_list()
-  local alone = not win_of("item") and not win_of("detail")
-  vim.api.nvim_set_current_win(window("list", alone))
-end
-
-local function detail_window()
-  return window("detail")
+  vim.api.nvim_set_current_win(window("list", not win_of("item")))
 end
 
 local function focus_item()
@@ -135,35 +137,15 @@ function M.forward()
   if loc then M.go(loc, { record = false }) end
 end
 
--- Shows item id in the detail split; opts.focus = false keeps the cursor
--- where it is (R3.5 preview).
-function M.show_detail(id, opts)
-  local from = vim.api.nvim_get_current_win()
-  vim.api.nvim_set_current_win(detail_window())
-  require("ado.nvim.detail").open(id)
-  if opts and opts.focus == false and vim.api.nvim_win_is_valid(from) then
-    vim.api.nvim_set_current_win(from)
-  end
-end
-
--- Like show_detail, without creating a detail split when there is none.
-function M.sync_detail(id)
-  if win_of("detail") then M.show_detail(id, { focus = false }) end
-end
-
--- Selecting an item in a list (R4.2, R9.2): its detail buffer in the
--- split, then its item view in the panel, which takes the cursor.
+-- Selecting an item in a list (R4.2, R9.2, RFC 0003 C6.3): its item
+-- buffer in the item window, which takes the cursor.
 function M.open_item_from_list(id)
   claim("list", vim.api.nvim_get_current_win())
-  M.show_detail(id)
   M.go(location.item(id))
 end
 
--- The item view for an item, beside the current window. From a detail
--- buffer (R3.7), that window becomes the detail split.
+-- The item buffer for an item, in the item window (RFC 0003 C6.4).
 function M.open_item(id)
-  local win = vim.api.nvim_get_current_win()
-  if FILETYPES.detail[vim.bo[vim.api.nvim_win_get_buf(win)].filetype] then claim("detail", win) end
   M.go(location.item(id))
 end
 
@@ -197,15 +179,10 @@ function M.toggle_list()
   return true
 end
 
--- Toggles the item view: closes its window, else opens it for item `id`
--- when given (the detail buffer's item), else reopens the last item
--- location shown. Returns false when there is nothing to open.
-function M.toggle_item(id)
+-- Toggles the item window: closes it, else reopens the last item location
+-- shown. Returns false when there is nothing to open.
+function M.toggle_item()
   if close("item") then return true end
-  if id then
-    M.open_item(id)
-    return true
-  end
   if not last.item then return false end
   M.go(last.item, { record = false })
   return true

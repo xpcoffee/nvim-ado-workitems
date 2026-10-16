@@ -144,7 +144,7 @@ function M.write(buf)
   end
   local saved, records, unloaded = {}, {}, {}
   for _, v in ipairs(all) do
-    if vim.bo[v.buf].modified then
+    if vim.bo[v.buf].modified or (v.mod.modified and v.mod.modified(v.buf)) then
       local record = v.mod.record(v.buf)
       if record then
         table.insert(saved, v)

@@ -292,7 +292,7 @@ test("UX1.6 end-of-line labels and concealed prefixes survive a re-pad; field an
   assert_aligned(buf)
   eq(label_rows(), before_labels)
   local concealed = vim.api.nvim_buf_get_extmarks(buf, vim.api.nvim_get_namespaces().ado_view, 0, -1, {})
-  eq(#concealed, #buffer_lines(buf), "every line keeps its concealed prefix")
+  eq(#concealed, #views.row_lines(buf), "every row line keeps its concealed prefix")
   for i, l in ipairs(before) do
     if not lines.row_ranges(l) then eq(buffer_lines(buf)[i], l, "line " .. i) end
   end

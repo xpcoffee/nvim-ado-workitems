@@ -70,8 +70,8 @@ function M.query(buf, actions)
   k("<leader>wr", actions.reload, "reload")
 end
 
--- actions: select, back, forward, expand, preview, detail, toggle_all,
--- browser, reload
+-- actions: select, back, forward, expand, preview, description, comment,
+-- toggle_all, browser, reload
 function M.item(buf, actions)
   cell_objects(buf)
   pickers(buf)
@@ -83,8 +83,10 @@ function M.item(buf, actions)
   k("[h", actions.back, "history back")
   k("]h", actions.forward, "history forward")
   k("<Tab>", actions.expand, "expand or collapse the child")
-  k("K", actions.preview, "preview in the detail split")
-  k("gd", actions.detail, "open in the detail buffer")
+  k("K", actions.preview, "show the row's item in a float")
+  k("gd", actions.select, "open the parent, child, link or area")
+  k("<leader>wd", actions.description, "edit the description; :w saves it")
+  k("<leader>wc", actions.comment, "add a comment, sent at once")
   k("<leader>wt", actions.toggle_all, "children and links in every state, or open only")
   k("<leader>wb", actions.browser, "open the item in the browser")
   k("<leader>wr", actions.reload, "reload")

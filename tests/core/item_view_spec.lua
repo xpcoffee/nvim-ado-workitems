@@ -7,11 +7,14 @@ local seed = require("tests.fixtures.seed")
 local session = require("ado.core.session")
 
 -- Most specs check the sections, so they read rows without the viewed
--- item's field lines; the field lines have their own spec.
+-- item's field lines and the closing Details row; those have their own
+-- specs.
 local all_rows = item_view.rows
 item_view = setmetatable({ rows = function(d)
   local out = {}
-  for _, r in ipairs(all_rows(d)) do if r.kind ~= "field" then table.insert(out, r) end end
+  for _, r in ipairs(all_rows(d)) do
+    if r.kind ~= "field" and r.slot ~= "boundary" then table.insert(out, r) end
+  end
   return out
 end }, { __index = item_view })
 
@@ -287,4 +290,13 @@ test("the viewed item's type, state, assignee and tags follow its row, one line 
   eq(fields, { "type=User Story", "state=Active", "assignee=" .. (rows[1].assignee or ""), "tags=" .. (rows[1].tags or "") })
   eq(rows[6].slot, "parent")
   eq(item_view.select(item_view.display(view), rows[2]), nil, "a field line")
+end)
+
+test("C7.4 the rows end with the Details boundary row, a heading after the last link section", function()
+  local s = new()
+  local view = load(s, location.item(20))
+  local rows = all_rows(item_view.display(view))
+  local last = rows[#rows]
+  eq({ last.kind, last.slot, last.label }, { "heading", "boundary", "Details" })
+  eq(rows[#rows - 1].slot, "link", "the last link row comes just before it")
 end)

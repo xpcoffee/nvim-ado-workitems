@@ -61,6 +61,7 @@ local function show(buf, win, at)
   if vim.api.nvim_get_mode().mode ~= "n" then return end
   local cursor = vim.api.nvim_win_get_cursor(win)
   if cursor[1] ~= at[1] or cursor[2] ~= at[2] then return end
+  if not require("ado.nvim.region").readable(buf, cursor[1]) then return end
   local text = M.content(vim.api.nvim_get_current_line(), cursor[2] + 1)
   if not text then return end
   local width = 1
