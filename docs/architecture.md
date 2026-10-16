@@ -280,8 +280,9 @@ The item view's rows are the **header** of the item buffer (RFC 0003).
 `core/item_view.rows` ends them with a fixed **boundary row**, `── Details`.
 Below it the presentation layer writes the **read-only region** as plain
 text, without row IDs: the details (`core/item_details.lua`: a `changed:`
-line and the description as markdown, wrapped to the window). These lines
-are never rows, so the change plan never receives them.
+line and the description as markdown, wrapped to the window), then the
+comments ("Comments paging" below). These lines are never rows, so the
+change plan never receives them.
 
 ```text
 /1 Checkout story              header: rows with row IDs, edited and saved with :w
@@ -293,6 +294,11 @@ are never rows, so the change plan never receives them.
     changed:   2026-10-01 11:00 · rev 1      read-only region: plain text
     description:
     Let customers pay at checkout.
+── Comments: 8
+2026-09-15 13:58 · Alex Smith
+    Looks right to me.
+
+── 1 of 8 comments shown; move down to load more     footer line: the last line
 ```
 
 `nvim/region.lua` keeps, per item buffer, an extmark on the boundary line
@@ -325,7 +331,7 @@ Entering Insert mode on the boundary or below runs `stopinsert` and says
 why, so most accidental edits never happen.
 
 The plugin's own writes into the region (a staged description, and the
-comment pages of phase 2 of plan 0003) must leave the user's header edits
+comment pages below) must leave the user's header edits
 undoable. Neovim leaves a change out of the undo history only with
 `'undolevels'` at -1, and then clears the whole history.
 `nvim/quiet_edit.lua` therefore writes the history to an undo file
@@ -347,6 +353,58 @@ adds one `update` of `System.Description` to the item's ops, so it goes in
 the item's one patch after the `test` on `/rev`, and the summary lists
 "description changed". Text equal to the loaded description stages
 nothing.
+
+### Comments paging
+
+Comments are read with `list_comments`, a read in the transport contract
+that the write guard passes unchanged. The `az` transport calls
+`GET {org}/{project}/_apis/wit/workItems/{id}/comments?api-version=7.1-preview.4&$top=5&order=desc`
+with `az rest`, adding `&continuationToken=<token>`, URL-encoded once, for
+every page after the first. ADO's token is the created date of the next
+page's first comment and is absent on the last page.
+
+`core/comments.lua` holds one item buffer's paging state, and
+`nvim/item_comments.lua` writes it into the buffer:
+
+```mermaid
+flowchart LR
+  T["CursorMoved, WinScrolled,<br/>WinResized, a page written"] --> R{"footer - w$ <= floor(h / 2)<br/>and idle, not done, not failed,<br/>read-only text unchanged"}
+  R -->|yes| B["comments.begin:<br/>request = generation, token"]
+  B --> L["list_comments, quiet"]
+  L --> C{"still the newest request<br/>of this buffer's state?"}
+  C -->|no| D["dropped, counted"]
+  C -->|yes| P["pandoc -t plain,<br/>one call per page, async"]
+  P --> M["comments.receive: merge,<br/>skip IDs already shown"]
+  M --> W["quiet write in place<br/>of the footer line"]
+  W --> T
+```
+
+- The heading's count is `System.CommentCount` from the item load, so an
+  item with no comments makes no call. The first page loads by the same
+  rule as the others, so an item whose comments are off-screen costs no
+  call until the user moves towards them.
+- At most one page is in flight per buffer. A response is merged only when
+  it answers the state's in-flight request, with the same generation (each
+  explicit reload makes a new state with the next generation) and the same
+  token. A comment already shown is skipped, because two comments created
+  in the same 100 ns would sit on both sides of a token. "All shown"
+  follows the absent token, not the count.
+- A page replaces the footer line, the buffer's last, through
+  `view_buffer.replace_readonly`, a quiet write: no undo step, the modified
+  flag kept, the header untouched. While the read-only text differs from
+  what the plugin wrote, paging stops, because the footer's place is not
+  known; the last line shows why at its end, and pages merged meanwhile are
+  written once the change is undone.
+- A failed page leaves the comments shown, puts the reason in the footer,
+  reports one line in `:messages` (the call is quiet, so the notifier does
+  not report it too) and is not retried until `<CR>` on the footer.
+- The reload after a save keeps the state and updates the count; the
+  heading then says how many are new. An explicit reload starts again.
+  After `<leader>wc` the header reloads, the first page is read again,
+  and the new comments go first.
+- `ux_stats()` reports `comment_page` (pages written, last and largest
+  durations, from the call to the write), `comment_page_failed` and
+  `comment_page_dropped`.
 
 ## Layout and history
 

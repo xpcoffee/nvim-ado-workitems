@@ -213,3 +213,60 @@ test("a create applies its fields and parent in one call; a failing one creates 
   eq(fake.items[1001], nil)
   eq(fake.next_id, 1001)
 end)
+
+local function with_comments(n, same_date_at)
+  local d = {}
+  for k, v in pairs(seed) do d[k] = v end
+  d.items = {}
+  for _, it in ipairs(seed.items) do table.insert(d.items, it) end
+  local comments = {}
+  for i = 1, n do
+    local minute = (same_date_at and i == same_date_at + 1) and same_date_at or i
+    table.insert(comments, { id = i, text = "<p>comment " .. i .. "</p>", author = "alex.smith@example.com",
+      created = string.format("2026-09-15T13:%02d:00.0000000Z", minute) })
+  end
+  d.items[1] = { id = 100, type = "User Story", title = "Checkout story", state = "Active", area = "P\\Team\\A",
+    comments = comments }
+  return d
+end
+
+local function ids_of(page)
+  local out = {}
+  for _, c in ipairs(page.comments) do table.insert(out, c.id) end
+  return out
+end
+
+test("list_comments pages newest first; the token is the next page's first created date", function()
+  local fake = Fake.new(with_comments(8))
+  local item
+  fake.get_work_item({ id = 100 }, function(_, r) item = r end)
+  eq(item.fields["System.CommentCount"], 8)
+  local page
+  fake.list_comments({ id = 100, project = "P", top = 5 }, function(_, p) page = p end)
+  eq(ids_of(page), { 8, 7, 6, 5, 4 })
+  eq({ page.total, page.token }, { 8, "2026-09-15T13:03:00.0000000Z" })
+  fake.list_comments({ id = 100, project = "P", top = 5, token = page.token }, function(_, p) page = p end)
+  eq(ids_of(page), { 3, 2, 1 })
+  eq(page.token, nil)
+  eq(page.comments[1].createdBy.displayName, "Alex Smith")
+end)
+
+test("two comments with one created date straddling a page end both come back on the next page", function()
+  local fake = Fake.new(with_comments(8, 3))
+  local page
+  fake.list_comments({ id = 100, project = "P", top = 5 }, function(_, p) page = p end)
+  eq(ids_of(page), { 8, 7, 6, 5, 4 })
+  eq(page.token, "2026-09-15T13:03:00.0000000Z", "#4 has the date of #3")
+  fake.list_comments({ id = 100, project = "P", top = 5, token = page.token }, function(_, p) page = p end)
+  eq(ids_of(page), { 4, 3, 2, 1 })
+end)
+
+test("add_comment adds a comment newer than the rest, and raises the rev", function()
+  local fake = Fake.new(with_comments(2))
+  fake.add_comment({ id = 100, text = "<p>new</p>" }, function() end)
+  local page
+  fake.list_comments({ id = 100, project = "P", top = 5 }, function(_, p) page = p end)
+  eq(ids_of(page), { 3, 2, 1 })
+  eq(page.comments[1].text, "<p>new</p>")
+  eq(fake.items[100].rev, 2)
+end)

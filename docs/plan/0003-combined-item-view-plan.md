@@ -1,6 +1,6 @@
 # Plan 0003: One item buffer, with the description and comments
 
-- Status: Planned, building on branch `feat/navigator`.
+- Status: Phases 1 and 2 built on branch `feat/navigator`, awaiting the owner's manual checks and a live read of the comments route (see "Phase 1 as built" and "Phase 2 as built").
 - Date: 2026-10-16
 - Implements: [RFC 0003](../rfc/0003-combined-item-view.md), with the owner's answers of 2026-10-16 (RFC section 14): Q1 to Q3 and Q5 to Q9 accepted as recommended, Q4 rejected.
 - Format: as [plan 0001](0001-implementation-plan.md) and [plan 0002](0002-ux-plan.md), phases as vertical slices, each usable on its own.
@@ -139,10 +139,32 @@ Manual checks still to run in the owner's editor: the list above under "Manual c
 - The comments route is a preview API (RFC A1). One constant in `nvim/az.lua`; a failed page leaves the buffer working (C4.7).
 - pandoc's cold start (RFC R4). The page conversion runs asynchronously, so it never blocks the editor.
 
+#### Phase 2 as built (2026-10-16)
+
+Built on branch `feat/navigator` as specified, with the deviations below. `make test` passes 638 tests (605 after phase 1) in name, reverse and shuffle order. The phase adds `tests/core/comments_spec.lua` (12), `tests/nvim/comments_spec.lua` (17), and cases in `fake_transport_spec` (3), `write_guard_spec` (1) and `az_spec` (2).
+
+`make bench` (WSL2, Neovim 0.11.6, 40 runs per case): the quiet write the pages use, replacing the footer line with 4 lines under 100 undo steps and 1,000 read-only lines, took 3.80 ms at the median and 7.52 ms at most, against the 25 ms target, and kept the history. A header edit's `TextChanged` with 1,000 read-only lines below cost -0.03 ms more than with none. In the `tmux` check with pandoc, a page took 18 ms from the call to the write (`ux_stats`, fake transport, warm pandoc).
+
+Mutation checks, as in phase 1: merging stale responses, dropping the de-duplication, allowing two pages in flight, retrying a failed page by itself, not pausing on an edit, clearing the history on a page write, dropping the comments on a save's reload, a page call that is not quiet, loading the first page on open, and keeping the comments on an explicit reload each made at least one spec fail.
+
+Real UI (`tmux`, fake transport, pandoc 3.1.3): 23 comments loaded in 5 pages as `G` moved to each new footer; the footer ended `all 23 comments shown`; a mention showed as `@Alex Smith` and a list as `-   one`; an edited comment said `edited`; editing a title, loading a page and `u` reverted the title and kept the comments; `dd` on a comment line paused paging with the message at the end of the last line, and `u` resumed it; in a 70-column window the comment text wrapped under its indent.
+
+Live read: not done. `az rest` failed with `AADSTS50135: Password change is required due to account risk` before reaching ADO, so neither the comments route nor `System.CommentCount` from `get_work_item` was checked against the real organisation in this phase. The owner needs to sign in again (`az login`), then open an item with more than 5 comments and check the footer and `require("ado").ux_stats()`.
+
+Deviations, each low risk:
+
+1. **The paused message is end-of-line text on the last line**, not the footer line's text: while the user's change stands, the plugin cannot know which line is the footer, so it writes nothing. A virtual line below the last line was hidden when the cursor sat on the last line.
+2. **The footer while the first page is in flight says `loading comments…`**, since "0 of 8 comments shown, loading more" reads oddly. An item with no comments has no footer: the heading says `── Comments: none`.
+3. **A count the item load does not report** shows `── Comments` and a footer `move down to load the comments`; the first page then gives the count (risk PA1).
+4. **Comment text is wrapped to the window** like the description (phase 1, deviation 6), at the width when the page was written.
+5. **Pages merged while paging is paused** are kept and written once the change is undone, so a response that arrives during the user's edit is not lost.
+6. **The page conversion runs asynchronously** (risk R4 of the RFC): pandoc runs off the main loop, with a separator line between comments so one call converts the page. The RFC's 2.7 s cold start did not repeat on 2026-10-16: three runs of pandoc 3.1.3 took 0.03, 0.01 and 0.01 s, but the first after a reboot was not measured. The description's conversion stays synchronous, as before.
+7. **After `<leader>wc`, the first page is read again and its new comments go first**, only when the buffer still has no unsaved edits; otherwise the heading's count says a comment is new.
+
 ## 6. Risks and assumptions
 
 | ID | Risk or assumption | If wrong | Mitigation |
 | --- | --- | --- | --- |
-| PA1 | `get_work_item` returns `System.CommentCount` (RFC section 7). | The heading shows 0 and no page loads. | A missing count is treated as unknown: the heading shows `── Comments` and the first page loads by the trigger. |
+| PA1 | `get_work_item` returns `System.CommentCount` (RFC section 7; not rechecked live in phase 2, see "Phase 2 as built"). | The heading shows no count. | A missing count is treated as unknown: the heading shows `── Comments` and the first page loads by the trigger. |
 | PA2 | Adding a comment raises the item's rev, as the detail buffer's code assumed (it replaced the item with the updated one). | Nothing: the guard below only costs a save first. | `<leader>wc` is refused while the buffer has unsaved edits, so a comment never makes the header's next `:w` fail as changed remotely; after a comment the header reloads quietly. |
 | PR1 | The quiet write (section "Status") depends on the undo file layout. | Header undo history is lost on a page write. | Fallback, warning and test, phase 1 risks. |

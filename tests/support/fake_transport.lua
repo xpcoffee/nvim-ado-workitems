@@ -10,6 +10,14 @@
 --   fake.types_omit_categories     work_item_types lists states without
 --                                  categories, as the per-type fallback expects
 --
+-- Comments come from seed.items[i].comments = { { id, text, format, author,
+-- created, modified, version, deleted }... }. list_comments pages them
+-- newest first by created date, as ADO does: the token is the created
+-- date of the next page's first comment, and a page holds the comments
+-- created at or before it, so two comments with the same date straddling
+-- a page end both reappear (RFC 0003 R5). get_work_item reports
+-- System.CommentCount. add_comment adds a comment newer than every other.
+--
 -- patch_work_item and create_work_item apply a JSON Patch whole or not at
 -- all, as ADO does: a failed op, a failed "test" on /rev (a "conflict"), or
 -- a state the type lacks leaves every item as it was. A relation is removed
@@ -78,7 +86,15 @@ local function build_items(seed)
       relations = {},
       _links = { html = { href = string.format("https://dev.azure.com/%s/%s/_workitems/edit/%d",
         seed.org, seed.projects[1], s.id) } },
+      comments = {},
     }
+    for _, c in ipairs(s.comments or {}) do
+      local ident = identities[c.author]
+      local who = { displayName = ident and ident.display_name or c.author, uniqueName = c.author }
+      table.insert(items[s.id].comments, { id = c.id, workItemId = s.id, version = c.version or 1,
+        text = c.text, format = c.format or "html", createdBy = who, createdDate = c.created,
+        modifiedBy = who, modifiedDate = c.modified or c.created, isDeleted = c.deleted })
+    end
   end
   for _, s in ipairs(seed.items) do
     if s.parent then
@@ -272,8 +288,39 @@ function Fake:op_get_work_item(params)
   local it = self.items[params.id]
   if not it then return not_found(params.id) end
   local raw = copy(it)
+  raw.comments = nil
+  local count = 0
+  for _, c in ipairs(it.comments or {}) do if not c.isDeleted then count = count + 1 end end
+  raw.fields["System.CommentCount"] = count
   if not params.relations then raw.relations = nil end
   return nil, raw
+end
+
+function Fake:op_list_comments(params)
+  local it = self.items[params.id]
+  if not it then return not_found(params.id) end
+  if not params.project then return transport.error("invalid", "a project is required to list comments") end
+  local all = {}
+  for _, c in ipairs(it.comments or {}) do if not c.isDeleted then table.insert(all, c) end end
+  table.sort(all, function(a, b)
+    if a.createdDate ~= b.createdDate then return a.createdDate > b.createdDate end
+    return a.id > b.id
+  end)
+  local start = 1
+  if params.token then
+    start = #all + 1
+    for i, c in ipairs(all) do
+      if c.createdDate <= params.token then
+        start = i
+        break
+      end
+    end
+  end
+  local top = params.top or 200
+  local page = {}
+  for i = start, math.min(#all, start + top - 1) do table.insert(page, copy(all[i])) end
+  local after = all[start + top]
+  return nil, { comments = page, total = #all, token = after and after.createdDate or nil }
 end
 
 -- As in ADO, an assignee is written as a unique name and read back as an
@@ -323,6 +370,15 @@ function Fake:op_add_comment(params)
   if not it then return not_found(params.id) end
   self.comments[params.id] = self.comments[params.id] or {}
   table.insert(self.comments[params.id], params.text)
+  local last_id = 0
+  for _, c in ipairs(it.comments) do last_id = math.max(last_id, c.id) end
+  -- Later than any seed date, and later than the comments added before.
+  self.added_comments = (self.added_comments or 0) + 1
+  local created = string.format("2099-01-01T%02d:%02d:00.0000000Z", math.floor(self.added_comments / 60),
+    self.added_comments % 60)
+  local who = { displayName = "Me Myself", uniqueName = self.seed.me }
+  table.insert(it.comments, { id = last_id + 1, workItemId = it.id, version = 1, text = params.text,
+    format = "html", createdBy = who, createdDate = created, modifiedBy = who, modifiedDate = created })
   it.rev = it.rev + 1
   return self:op_get_work_item({ id = params.id })
 end

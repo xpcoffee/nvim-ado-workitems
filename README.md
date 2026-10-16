@@ -100,7 +100,7 @@ column's height while the list is open and all of it alone.
 `require("ado").open(id)`, `open_prompt()` and `<CR>` in the search picker
 open it too, in the item window. `item_view()` with no ID asks for one.
 
-The buffer has two parts:
+The buffer has three parts:
 
 1. The **header**: the item's title and its `type:`, `state:`,
    `assignee:` and `tags:` lines, its parent, its area path, its children,
@@ -112,12 +112,28 @@ The buffer has two parts:
    edit there makes `:w` refuse the whole save with "the details and
    comments are read-only; u undoes the change, <leader>wr reloads".
    Entering Insert mode there leaves it at once and says so.
+3. The **comments**, newest first, under `── Comments: N`, also
+   read-only. They load 5 at a time as you move towards the end of the
+   buffer: a page loads when the last line, the footer, is shown or is
+   within half a window's height below it, so an item whose comments are
+   off-screen costs no call until you move towards them. The footer says
+   what is happening: `8 comments; move down to load them`, `5 of 8
+   comments shown, loading more…`, `all 8 comments shown`, or `comments
+   did not load: <reason>; <CR> retries`. Loading a page adds no undo
+   step, so `u` still undoes your header edits. While you have changed
+   the comments' text, paging stops and the last line says to undo the
+   change. Each comment shows as its local date and time, its author,
+   and `edited` when it was edited, then its text as plain text, indented.
+   `<leader>wr` loads the comments again from the newest; the reload
+   after a save keeps them, and the heading says when the save found new
+   ones (`Comments: 9 (1 new; <leader>wr shows it)`). Going back to an
+   item with `[h` shows the comments it had loaded.
 
 The window bar shows the item's ID, type, revision and changed time.
 
 | Key | Action |
 | --- | --- |
-| `<CR>` | go to the parent, child or linked item, or to the area view of the area row; on the description, edit it |
+| `<CR>` | go to the parent, child or linked item, or to the area view of the area row; on the description, edit it; on the comments' footer, load the next page or retry a failed one |
 | `gd` | the same as `<CR>` on a row |
 | `<Tab>` | show a child's own children beneath it, and hide them again |
 | `K` | show the item under the cursor in a float: its fields and the start of its description; `K` again enters the float |
@@ -146,7 +162,8 @@ the text, or reload (`<leader>wr` asks first).
 because a comment notifies people and cannot be reviewed in the save
 summary like a field. It is refused while the buffer has unsaved edits:
 a comment raises the item's revision, so those edits could no longer be
-saved. After the comment the header reloads.
+saved. After the comment the header reloads and the new comment shows
+first.
 
 ```lua
 require("ado").setup({
@@ -314,6 +331,8 @@ group, so a colour scheme colours the views; override any of them with
 | `AdoChanged` | `Changed` | the `~` sign |
 | `AdoNew` | `Added` | the `+` sign |
 | `AdoCount` | `Comment` | the counts in the window bar |
+| `AdoCommentHeading` | `Title` | a comment's date and author line |
+| `AdoCommentText` | `Normal` | a comment's text |
 
 The views set `signcolumn=yes:1` on their windows. The dot and the signs
 can be other characters, such as Nerd Font glyphs, each one column wide:

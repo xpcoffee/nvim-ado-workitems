@@ -83,7 +83,9 @@ local function finish(all, saved, result)
   progress.echo(string.format("reloading %d %s", #reloads, #reloads == 1 and "view" or "views"))
   local pending = #reloads
   for _, v in ipairs(reloads) do
-    v.mod.load(v.buf, { quiet = true, on_done = function()
+    -- keep_comments: a save changes no comment, so an item buffer keeps
+    -- the pages it loaded (RFC 0003 C4.9).
+    v.mod.load(v.buf, { quiet = true, keep_comments = true, on_done = function()
       pending = pending - 1
       if pending == 0 then report() end
     end })

@@ -10,6 +10,7 @@ local core = require("ado.core.item_view")
 local details = require("ado.core.item_details")
 local fit = require("ado.nvim.fit")
 local float = require("ado.nvim.float")
+local item_comments = require("ado.nvim.item_comments")
 local keymaps = require("ado.nvim.keymaps")
 local layout = require("ado.nvim.layout")
 local lines_mod = require("ado.nvim.lines")
@@ -107,8 +108,11 @@ local function render(buf)
   entry.ids = ids
   local boundary = #text
   vim.list_extend(text, details_lines(buf, entry))
+  vim.list_extend(text, item_comments.section(buf, entry))
   view_buffer.set_lines(buf, text, { line = boundary, row_id = ids[#ids] })
   mark_details(buf, entry)
+  item_comments.highlight(buf, entry)
+  vim.schedule(function() item_comments.maybe_load(buf) end)
   local labels = {}
   for i, row in ipairs(rows) do
     if row.kind == "item" and LABELS[row.slot] then labels[i - 1] = LABELS[row.slot] end
@@ -119,7 +123,9 @@ end
 
 -- opts.quiet leaves the command line alone, for a caller that reports the
 -- load itself; opts.on_done(err) runs once the load ends, also when the
--- buffer went away or a newer load replaced it.
+-- buffer went away or a newer load replaced it. opts.keep_comments keeps
+-- the comments loaded so far (the reload after a save or a comment);
+-- otherwise paging starts again (RFC 0003 C4.8, C4.9).
 function M.load(buf, opts)
   opts = opts or {}
   local echo = opts.quiet and function() end or progress.echo
@@ -149,6 +155,7 @@ function M.load(buf, opts)
     entry.expanding = {}
     entry.description = markup.html_to_md(view.item.description_html)
     entry.staged = nil
+    item_comments.on_load(entry, view.item.comment_count, opts.keep_comments)
     render(buf)
     local linked = 0
     for _, s in ipairs(view.sections) do linked = linked + #s.items end
@@ -262,6 +269,7 @@ function M.stage_description(buf, view, new_lines)
   local text = details_lines(buf, entry)
   view_buffer.replace_readonly(buf, boundary, boundary + old_count, text)
   mark_details(buf, entry)
+  item_comments.highlight(buf, entry)
   if entry.staged then
     vim.bo[buf].modified = true
     notify("description changed; :w saves it with the item's other edits")
@@ -277,6 +285,7 @@ function actions.select()
   if not region.readable(buf, line) then
     local first, last = description_lines(buf, entry)
     if first and line >= first and line <= last then return actions.description() end
+    item_comments.on_enter(buf, line)
     return
   end
   local reg = row_under_cursor()
@@ -357,7 +366,9 @@ function actions.comment()
         if err then return end
         notify("commented on #" .. id)
         if vim.api.nvim_buf_is_valid(buf) and state[buf] == entry and not vim.bo[buf].modified then
-          M.load(buf, { quiet = true, after_comment = true })
+          M.load(buf, { quiet = true, keep_comments = true, on_done = function(lerr)
+            if not lerr then item_comments.show_newest(buf) end
+          end })
         end
       end)
     end,
@@ -441,6 +452,12 @@ end
 
 M.actions = actions
 
+item_comments.setup({
+  entry = function(buf) return state[buf] end,
+  render = function(buf) if state[buf] and state[buf].display then render(buf) end end,
+  format_time = local_time,
+})
+
 -- Opens loc in the item panel and records it in the history.
 function M.open(loc, opts)
   return layout.go(loc, opts)
@@ -462,6 +479,7 @@ function M.show(loc, opts)
     state[buf] = { location = loc, ids = {}, expanding = {} }
     keymaps.item(buf, actions)
     region.guard_insert(buf, READONLY)
+    item_comments.attach(buf)
     -- A staged description is an unsaved edit that the undo history does
     -- not hold, so `u` back to the loaded header must not clear the flag.
     vim.api.nvim_create_autocmd({ "TextChanged", "BufModifiedSet" }, {

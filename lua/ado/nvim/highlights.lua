@@ -13,6 +13,8 @@ M.LINKS = {
   AdoChanged = "Changed",
   AdoNew = "Added",
   AdoCount = "Comment",
+  AdoCommentHeading = "Title",
+  AdoCommentText = "Normal",
 }
 
 -- hex -> true, for every AdoColor_ group made this session.

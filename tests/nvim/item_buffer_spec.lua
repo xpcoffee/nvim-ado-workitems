@@ -93,6 +93,7 @@ test("C1.1 C3.1 the header is followed by the Details row, the changed line and 
     "    changed:   " .. local_minute("2026-10-01T09:00:00Z") .. " · rev 1",
     "    description:",
     "    <p>Let customers pay at checkout.</p>",
+    "── Comments: none",
   })
   eq(vim.bo[buf].modified, false)
   open_item(105)

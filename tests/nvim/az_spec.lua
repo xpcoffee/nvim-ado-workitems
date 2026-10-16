@@ -272,3 +272,27 @@ test("patch_work_item sends the patch as given, in one az rest call", function()
   eq(vim.json.decode(argv[12]), patch)
   eq({ unpack(argv, 13) }, { "--output", "json" })
 end)
+
+test("C7.1 list_comments calls the comments route with az rest, newest first, 5 a page, the token encoded once", function()
+  local body = vim.json.encode({ totalCount = 8, count = 5, comments = { { id = 9 } },
+    continuationToken = "2026-09-11T14:55:26.0930000Z" })
+  local t, argvs = transport({ stdout = body })
+  local err, page = call(t, "list_comments", { id = 42, project = "Example Team", top = 5,
+    token = "2026-09-15T13:58:00.1000000Z" })
+  eq(err, nil)
+  eq(page, { comments = { { id = 9 } }, total = 8, token = "2026-09-11T14:55:26.0930000Z" })
+  eq(argvs[1], { "az", "rest", "--method", "get", "--url",
+    URL .. "/Example%20Team/_apis/wit/workItems/42/comments?api-version=7.1-preview.4&$top=5&order=desc"
+      .. "&continuationToken=2026-09-15T13%3A58%3A00.1000000Z",
+    "--resource", "499b84ac-1321-427f-aa17-267ca6975798", "--output", "json" })
+end)
+
+test("list_comments: the last page has no token, and a project is required", function()
+  local t = transport({ stdout = '{"totalCount": 3, "comments": [], "continuationToken": null}' })
+  local err, page = call(t, "list_comments", { id = 1, project = "P" })
+  eq(err, nil)
+  eq(page.token, nil)
+  eq(page.total, 3)
+  err = call(t, "list_comments", { id = 1 })
+  eq(err.kind, "invalid")
+end)

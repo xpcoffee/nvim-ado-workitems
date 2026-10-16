@@ -207,6 +207,14 @@ function Session:people()
   return self.people_search
 end
 
+-- One page of item id's comments, newest first, after the page whose
+-- continuation token is token (nil: the first page). Quiet: the item
+-- buffer reports a failed page in its footer line (RFC 0003 C4.7).
+-- cb(err, { comments = { raw... }, total, token }).
+function Session:list_comments(id, project, token, top, cb)
+  self.transport.list_comments({ id = id, project = project, top = top, token = token, quiet = true }, cb)
+end
+
 function Session:add_comment(id, text, cb)
   self.transport.add_comment({ id = id, text = text }, function(err, raw)
     if err then return cb(err) end

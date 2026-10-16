@@ -46,6 +46,9 @@ local TYPE_STATES_API_VERSION = "6.0"
 -- a token for a URL it does not recognise.
 local ADO_RESOURCE = "499b84ac-1321-427f-aa17-267ca6975798"
 local IDENTITY_API_VERSION = "7.1-preview.1"
+-- The comments route has no released version: "7.1" fails, and
+-- 7.0-preview.3 to 7.2-preview.4 work (checked 2026-10-16, RFC 0003).
+local COMMENTS_API_VERSION = "7.1-preview.4"
 local WORK_ITEMS_API_VERSION = "7.1"
 -- Resolving needs only "none", "one" or "several", so a few results do.
 local IDENTITY_MAX = 10
@@ -173,6 +176,27 @@ function M.new(opts)
   function t.add_comment(params, cb)
     run({ "az", "boards", "work-item", "update", "--id", tostring(params.id),
       "--discussion", params.text, "--output", "json" }, cb)
+  end
+
+  -- The comments route needs the project in the URL. The response's
+  -- nextPage URL drops `order`, so each page's URL is built here; the
+  -- token (a timestamp) is encoded once.
+  function t.list_comments(params, cb)
+    if not params.project or params.project == "" then
+      finish(cb, transport.error("invalid", "a project is required to list comments"))
+      return
+    end
+    local url = string.format("%s/%s/_apis/wit/workItems/%d/comments?api-version=%s&$top=%d&order=desc",
+      base_url, urls.encode(params.project), params.id, COMMENTS_API_VERSION, params.top or 5)
+    if params.token then url = url .. "&continuationToken=" .. urls.encode(params.token) end
+    exec({ "az", "rest", "--method", "get", "--url", url, "--resource", ADO_RESOURCE, "--output", "json" },
+      function(err, data)
+        if err then return cb(err) end
+        if type(data) ~= "table" then return cb(transport.error("failed", "unexpected comments response")) end
+        local token = data.continuationToken
+        cb(nil, { comments = type(data.comments) == "table" and data.comments or {},
+          total = tonumber(data.totalCount), token = type(token) == "string" and token ~= "" and token or nil })
+      end)
   end
 
   function t.work_item_types(params, cb)

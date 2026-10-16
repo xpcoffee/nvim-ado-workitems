@@ -23,6 +23,7 @@ local READS = {
   query_children = true,
   area_children = true,
   resolve_identity = true,
+  list_comments = true,
 }
 
 -- Area paths compare case-insensitively, with "/" accepted for "\".

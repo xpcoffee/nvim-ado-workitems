@@ -22,6 +22,11 @@ M.OPERATIONS = {
   "query",                 -- { wiql, spec, project }  -> { raw item... }
   "get_work_item",         -- { id, relations }        -> raw item; relations = true asks for its links
   "add_comment",           -- { id, text }             -> raw item
+  -- one page of an item's comments, newest first; token is the previous
+  -- page's, nil for the first; the result's token is nil on the last page.
+  -- comments are raw ADO comments ({ id, version, text, format,
+  -- createdBy, createdDate, isDeleted... }); a read
+  "list_comments",         -- { id, project, top, token } -> { comments, total, token }
   "work_item_types",       -- { project }              -> { { name, isDisabled, states = { { name, category }... } }... }
   "work_item_type_states", -- { type, project }        -> { { name, category }... }
   -- path is the classification node form, \Project\Area\Team (core/area_path.lua)
