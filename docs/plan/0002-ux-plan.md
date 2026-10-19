@@ -513,6 +513,51 @@ Manual checks still to run in the owner's editor, in addition to the phase's lis
 - With `'number'` on, or `'winborder'` set (0.11), the rows still fit and the float uses the border.
 - A week of use with no save writing a cut title (the plan's exit criterion).
 
+#### Addendum: visible work item IDs (2026-10-19)
+
+The owner asked for "work item IDs as columns in the nav views and as the first field in the work item details; these are important for me to be able to copy paste easily". Built on branch `feat/navigator`. This changes the column model of phases 1 and 5:
+
+1. **Every row view starts with an id column**: the area view, "my work items", and the item buffer's parent, child and link rows. It shows the plain number, padded like the other columns, so `yic` and `yiw` yank just the number. The concealed row ID prefix stays the row's identity; the id column is display only. A row is now `<id> │ <type> │ <state> │ <title> │ <assignee> │ <tags>`, parsed by the same rule with one more separator before the title (`core/table_layout.lua`, layout `head = 3`).
+2. **The item buffer's first field line is `id: <number>`**, above `type:`.
+3. **The id column is never cut and takes its width first** in `table_layout.budget`; the other columns give way as before.
+4. **IDs are read-only.** A changed id cell or `id:` line rejects that row at `:w` ("the ID is read-only; put 101 back, or reload") and nothing is sent; the row's other edits are not planned. A typed line leaves its id cell empty, and its ID shows after the save reloads. A pasted row keeps the ID text it was copied with; moves and copies are still decided by the row ID prefix.
+5. **Child rows keep their indent in the type column**, now the layout's indent cell, so the IDs line up in one column.
+6. The hover float (`K`, and the cut-cell float) shows the ID as before.
+
+Deviations, each low risk. Those marked **(changes earlier behaviour)** alter what phases 1 to 5 built:
+
+1. **(changes earlier behaviour)** Rows need 9 more columns for 6-digit IDs (6 for the number, 3 for its separator) before they fit with the title at 20. Phase 5's rows fit a 60-column window. In tmux, with one 6-digit ID in the view, rows with long cells ran 4 columns past a 60-column window, so `$` scrolled the view sideways by 4; they fit from about 65 columns, depending on the widest state and the length of the hidden row ID prefix, which grows through a session. This follows from decision 3 (the ID is never cut) and the 20-column title floor; neither was changed. `table_layout_spec` checks every step boundary, now 9 columns wider.
+2. **(changes earlier behaviour)** In Normal mode the cursor is moved out of a row's concealed row ID prefix on `CursorMoved`. Without this, `0`, `G` or `gg` leave the cursor on the hidden `/`, where it shows on the ID's first digit, and `yiw` yanks `/`.
+3. **A typed line with text in its id column is rejected** ("a new line has no ID until the save creates it; leave its id column empty"), so a line typed to look like an existing item is never created as a new one.
+4. **The rejection for a row that lost a separator** now reads "the row needs its five │ separators (id │ type │ state │ title │ assignee │ tags)".
+5. **A parsed row holds the id cell's text as `shown_id`**, not `id`, so it never overwrites the work item ID of a loaded row. Core view records built by hand (`tests/support/records.lua`) carry it too; a record without it is not checked.
+
+`make test` passes 662 tests (638 before) in name order and with `ORDER=reverse` and `ORDER=shuffle`; the change adds `tests/nvim/ids_spec.lua` (12) and cases in `table_layout_spec`, `plan_spec`, `lines_spec`, `fit_spec`, `complete_spec` and `pick_spec`, and the specs that found cells by position now find them by column name (`table_layout.INDEX`). Six guards were broken one at a time, each restored from a snapshot copy: the id cell comparison (5 specs failed), the `id:` line comparison (2), the new-line rejection (2), the id column's width in the budget (6), the id cut like a title together with a 2-column cap (16), and the cursor move out of the prefix (1).
+
+`make bench` (WSL2, Neovim 0.11.6, 40 runs per case), every target met:
+
+| Rows | Case | Rewrites | Median | Largest | TextChanged | Target |
+| --- | --- | --- | --- | --- | --- | --- |
+| 200 | full layout | | 1.27 ms | 2.49 ms | | none set |
+| 200 | decorate every row | | 1.73 ms | 2.51 ms | | none set |
+| 200 | re-pad, no column width change | 1 | 1.96 ms | 3.33 ms | 3.75 ms | under 5 ms |
+| 200 | re-pad, widens a column | 200 | 2.48 ms | 3.84 ms | 4.44 ms | under 25 ms |
+| 1,000 | full layout | | 6.61 ms | 8.60 ms | | under 50 ms |
+| 1,000 | decorate every row | | 8.71 ms | 10.67 ms | | under 25 ms |
+| 1,000 | re-pad, no column width change | 1 | 9.88 ms | 14.39 ms | 19.78 ms | under 25 ms |
+| 1,000 | re-pad, widens a column | 1,000 | 14.23 ms | 17.74 ms | 24.02 ms | under 50 ms |
+
+The bench's cell edits now name their column; before, they would have edited the column to the left once the id column came first.
+
+Checked in tmux with the fake transport: at 100 columns every row fits; at 60 columns the IDs stay whole and aligned and `$` scrolls 4 columns (the fixture's IDs are 3 digits, plus one of 6 digits, which sets the column's width); `yic` and `G` then `yiw` yank `900033`; the item buffer shows `id: 100` first and its child rows indent in the type column; an edited ID is rejected in the summary float with nothing sent.
+
+Manual checks still to run in the owner's editor:
+
+- On a real area: `yiw` and `yic` on an ID cell, and on the item buffer's `id:` line, then paste into a browser or chat.
+- At the widths the owner uses: whether rows with 6-digit IDs fit, and if not, whether the sideways scroll at 60 columns is acceptable or the title floor or another column should give way.
+- `ciw` on an ID, `:w`: the save is rejected, naming the row; `u`, `:w` plans nothing.
+- `dd` a row, `p` it in another area view, `:w`: one area change; `yyp`, `:w`: one copy, which shows its own ID after the reload.
+
 ## 6. Dependencies
 
 No phase needs a new plugin or a newer Neovim than the 0.10 the README requires.

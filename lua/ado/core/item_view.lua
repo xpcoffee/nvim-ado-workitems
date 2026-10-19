@@ -16,7 +16,8 @@
 --           id, rev, type, state, assignee, tags, title, depth,
 --           block_parent (child rows under an expanded row), rel (link rows) }
 --       | { kind = "field", slot = "self", id, field, value } (the viewed
---           item's metadata, one line per field beneath its title)
+--           item's metadata, one line per field beneath its title: its ID,
+--           read-only, then SELF_FIELDS)
 --       | { kind = "area", slot = "area", path, name }
 --       | { kind = "heading", slot = "parent" | "children" | "link" | "boundary", rel, label }
 --
@@ -220,7 +221,10 @@ local function block_rows(display, id, depth, out)
   return out
 end
 
+-- The fields a save can edit on the item's own lines.
 M.SELF_FIELDS = { "type", "state", "assignee", "tags" }
+-- The field line above them that shows the item's ID, for copying.
+M.ID_FIELD = "id"
 
 M.BOUNDARY_LABEL = "Details"
 
@@ -229,7 +233,8 @@ M.BOUNDARY_LABEL = "Details"
 function M.rows(display)
   local view = display.view
   local self_row = item_row(view.item, "self", 0)
-  local out = { self_row }
+  local out = { self_row,
+    { kind = "field", slot = "self", id = self_row.id, field = M.ID_FIELD, value = tostring(self_row.id) } }
   for _, f in ipairs(M.SELF_FIELDS) do
     table.insert(out, { kind = "field", slot = "self", id = self_row.id, field = f, value = self_row[f] or "" })
   end

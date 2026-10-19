@@ -5,6 +5,7 @@
 -- inside it (plan 0002 section 4), and fires TextChanged itself after keys.
 local fit = require("ado.nvim.fit")
 local lines = require("ado.nvim.lines")
+local C = require("ado.core.table_layout").INDEX
 local screen = require("tests.support.screen")
 local views = require("tests.support.views")
 
@@ -64,7 +65,7 @@ local function values(buf, id)
   return fit.read(buffer_lines(buf)[line_of(buf, id)])
 end
 
--- Puts the cursor on byte `offset` (0-based) of cell `index` of item id's
+-- Puts the cursor on byte `offset` (0-based) of cell `index` (table_layout.INDEX) of item id's
 -- row.
 local function to_cell(buf, id, index, offset)
   local row = line_of(buf, id)
@@ -92,8 +93,11 @@ local function text_width(win)
   return info.width - info.textoff
 end
 
-test("UX4.1 rows fit 60 and 78 column windows, and $ on every row leaves the window unscrolled", function()
-  for _, width in ipairs({ 60, 78 }) do
+-- The id column takes 6 columns for the seed's 3-digit IDs; 66 leaves
+-- room for a row ID prefix of up to 5 digits, which grows with the specs
+-- run before this one.
+test("UX4.1 rows fit 66 and 78 column windows, and $ on every row leaves the window unscrolled", function()
+  for _, width in ipairs({ 66, 78 }) do
     setup(width)
     local buf = open_area()
     local tw = text_width()
@@ -118,31 +122,31 @@ test("UX4.1 a 40 column window keeps the title at 20 and shows types as letters"
   setup(40)
   local buf = open_area()
   local r = values(buf, 103)
-  eq(r.cells[1].text, "T")
+  eq(r.cells[C.type].text, "T")
   eq(r.values.type, "Task", "the letter stands for the type")
-  eq(vim.fn.strdisplaywidth(r.cells[3].text), 20)
+  eq(vim.fn.strdisplaywidth(r.cells[C.title].text), 20)
   eq(r.values.title, LONG[103])
-  eq(fit.read(buffer_lines(buf)[line_of(buf, 100)]).cells[1].text, "S", "User Story shows as S")
+  eq(fit.read(buffer_lines(buf)[line_of(buf, 100)]).cells[C.type].text, "S", "User Story shows as S")
 end)
 
 test("UX4.2 type letters come from setup", function()
   local env = setup(40)
   require("ado.config").setup({ ui = { type_letters = { ["User Story"] = "U" } } })
   local buf = open_area()
-  eq(values(buf, 100).cells[1].text, "U")
+  eq(values(buf, 100).cells[C.type].text, "U")
   ok(env)
 end)
 
 test("UX5.1 x in a cut title, then :w plans the full title with one letter removed, shown in full", function()
   local env = setup(60)
   local buf = open_area()
-  local before = values(buf, 103).cells[3].text
+  local before = values(buf, 103).cells[C.title].text
   ok(before:find("…", 1, true), before)
-  to_cell(buf, 103, 3, 0)
+  to_cell(buf, 103, C.title, 0)
   change("x")
   local r = values(buf, 103)
   eq(r.values.title, LONG[103]:sub(2))
-  ok(r.cells[3].text:find("…", 1, true), "cut again: " .. r.cells[3].text)
+  ok(r.cells[C.title].text:find("…", 1, true), "cut again: " .. r.cells[C.title].text)
   local writes = #env.fake.writes
   local s = save(env, buf, false)
   eq(s.can_apply, true)
@@ -154,7 +158,7 @@ end)
 test("UX5.1 u and <C-r> across edits of a cut title find the right full value each time", function()
   setup(60)
   local buf = open_area()
-  to_cell(buf, 103, 3, 0)
+  to_cell(buf, 103, C.title, 0)
   local states = { { lines = buffer_lines(buf), title = LONG[103] } }
   change("x")
   table.insert(states, { lines = buffer_lines(buf), title = LONG[103]:sub(2) })
@@ -178,7 +182,7 @@ test("UX5.1 Insert mode in a cut title keeps its hidden part and cuts it again, 
   setup(60)
   local buf = open_area()
   local loaded = buffer_lines(buf)
-  to_cell(buf, 102, 3, 4)
+  to_cell(buf, 102, C.title, 4)
   change("iworking <Esc>")
   eq(values(buf, 102).values.title, "Add working integration tests for the payment provider callbacks and retries")
   local line = buffer_lines(buf)[line_of(buf, 102)]
@@ -191,7 +195,7 @@ test("UX5.4 deleting the … rejects the save, naming the row, and nothing is se
   local env = setup(60)
   local buf = open_area()
   local row = line_of(buf, 103)
-  local cell = values(buf, 103).cells[3]
+  local cell = values(buf, 103).cells[C.title]
   vim.api.nvim_win_set_cursor(0, { row, cell.last - #"…" })
   change("x")
   eq(values(buf, 103).ambiguous, { "title" })
@@ -211,13 +215,13 @@ end)
 test("UX5.4 an edit made from an undo state the re-pad never saw cannot be restored, and rejects", function()
   local env = setup(60)
   local buf = open_area()
-  to_cell(buf, 103, 3, 0)
+  to_cell(buf, 103, C.title, 0)
   change("x")
   -- A `u` whose TextChanged never fired, then an edit of the cut title:
   -- the text before that edit is not the one the re-pad last saw, so the
   -- hidden part of the title is not known for sure.
   vim.cmd("undo")
-  to_cell(buf, 103, 3, 1)
+  to_cell(buf, 103, C.title, 1)
   change("x")
   eq(values(buf, 103).ambiguous, { "title" })
   local writes = #env.fake.writes
@@ -230,7 +234,7 @@ end)
 test("UX5.3 cic on a cut title takes the text typed as the whole title", function()
   local env = setup(60)
   local buf = open_area()
-  to_cell(buf, 103, 3, 2)
+  to_cell(buf, 103, C.title, 2)
   change("cicMend login<Esc>")
   eq(values(buf, 103).values.title, "Mend login")
   eq(values(buf, 103).ambiguous, nil)
@@ -242,7 +246,7 @@ test("UX5.3 a value written by <leader>we replaces a cut cell whole", function()
   setup(60)
   local buf = open_area()
   local row = line_of(buf, 101)
-  require("ado.nvim.cells").write(buf, { row }, 5, "release")
+  require("ado.nvim.cells").write(buf, { row }, C.tags, "release")
   require("ado.nvim.realign").run(buf)
   eq(values(buf, 101).values.tags, "release")
   eq(values(buf, 101).ambiguous, nil)
@@ -252,14 +256,14 @@ test("UX5.2 <leader>wx shows a cut title in full; an edit at its end saves, and 
   local env = setup(60)
   local buf = open_area()
   local loaded = buffer_lines(buf)
-  to_cell(buf, 103, 3, 0)
+  to_cell(buf, 103, C.title, 0)
   vim.g.mapleader = "\\"
   require("ado.nvim.reveal").show(false)
   local r = values(buf, 103)
-  eq(r.cells[3].text, LONG[103])
-  vim.api.nvim_win_set_cursor(0, { line_of(buf, 103), r.cells[3].last - 1 })
+  eq(r.cells[C.title].text, LONG[103])
+  vim.api.nvim_win_set_cursor(0, { line_of(buf, 103), r.cells[C.title].last - 1 })
   change("x")
-  eq(values(buf, 103).cells[3].text, LONG[103]:sub(1, -2), "shown in full, not cut again")
+  eq(values(buf, 103).cells[C.title].text, LONG[103]:sub(1, -2), "shown in full, not cut again")
   eq(values(buf, 103).values.title, LONG[103]:sub(1, -2))
   local s = save(env, buf, false)
   eq(s.lines[3], "  #103 title: '" .. LONG[103] .. "' -> '" .. LONG[103]:sub(1, -2) .. "'")
@@ -271,7 +275,7 @@ end)
 test("UX5.2 <leader>wx on a cell whose … was edited shows the title it was loaded with", function()
   local env = setup(60)
   local buf = open_area()
-  local cell = values(buf, 103).cells[3]
+  local cell = values(buf, 103).cells[C.title]
   vim.api.nvim_win_set_cursor(0, { line_of(buf, 103), cell.last - #"…" })
   change("x")
   require("ado.nvim.reveal").show(false)
@@ -284,7 +288,7 @@ test("UX4.3 resizing an unmodified view lays it out again, unmodified and with n
   setup(78)
   local buf = open_area()
   local wide = buffer_lines(buf)
-  vim.api.nvim_win_set_width(0, 60)
+  vim.api.nvim_win_set_width(0, 66)
   local view_refit = require("ado.nvim.view_buffer").refit
   view_refit(buf)
   local narrow = buffer_lines(buf)
@@ -298,7 +302,7 @@ end)
 test("UX4.3 a modified view keeps its layout on resize, and its window bar says why", function()
   setup(78)
   local buf = open_area()
-  to_cell(buf, 103, 3, 0)
+  to_cell(buf, 103, C.title, 0)
   change("x")
   local before = buffer_lines(buf)
   vim.api.nvim_win_set_width(0, 60)
@@ -340,7 +344,7 @@ test("UX5.1 a row with a cut title pasted into a view of another width is cut to
   local pasted = values(item, 103)
   eq(pasted.values.title, LONG[103])
   eq(pasted.ambiguous, nil)
-  eq(pasted.cells[1].text, "T", "cut to the item view's layout")
+  eq(pasted.cells[C.type].text, "T", "cut to the item view's layout")
   local s = save(env, item, false)
   eq(s.can_apply, true, table.concat(s.lines, "\n"))
   ok(table.concat(s.lines, "\n"):find(LONG[103], 1, true), "the summary names the whole title")
@@ -355,9 +359,9 @@ test("UX4.2 child rows indent their type letter, and the columns stay aligned", 
   require("ado.nvim.item_view").actions.expand()
   vim.wait(20)
   local child = values(buf, 106)
-  eq(child.cells[1].indent .. child.cells[1].text, "  T")
+  eq(child.cells[C.type].indent .. child.cells[C.type].text, "  T")
   local parent = values(buf, 102)
-  local function bar(r) return vim.fn.strdisplaywidth(r.body:sub(1, r.ranges[1].bar - 1)) end
+  local function bar(r) return vim.fn.strdisplaywidth(r.body:sub(1, r.ranges[C.type].bar - 1)) end
   eq(bar(child), bar(parent))
   eq(child.values.title, "Test fixtures for the payment provider sandbox and its error codes")
 end)
@@ -385,7 +389,7 @@ test("UX5.1 a copy of a row with a cut title (yyp), edited, saves the copy's ful
   local copy = vim.fn.line(".")
   local prefix = lines.prefix_length(buffer_lines(buf)[copy])
   local ranges = lines.row_ranges(buffer_lines(buf)[copy])
-  vim.api.nvim_win_set_cursor(0, { copy, prefix + ranges[3].first - 1 })
+  vim.api.nvim_win_set_cursor(0, { copy, prefix + ranges[C.title].first - 1 })
   change("x")
   local r = fit.read(buffer_lines(buf)[copy])
   eq(r.values.title, LONG[103]:sub(2))
@@ -400,11 +404,54 @@ test("UX5.1 a blockwise change in the heads of two cut titles restores both", fu
   local buf = open_area()
   local first, second = line_of(buf, 102), line_of(buf, 103)
   eq(second, first - 1, "103 sits just above 102 in the seed's order")
-  to_cell(buf, 103, 3, 0)
+  to_cell(buf, 103, C.title, 0)
   change("<C-v>jlcNo<Esc>")
   vim.wait(20)
   vim.api.nvim_exec_autocmds("TextChanged", { buffer = buf })
   eq(values(buf, 103).values.title, "No" .. LONG[103]:sub(3))
   eq(values(buf, 102).values.title, "No" .. LONG[102]:sub(3))
   eq(values(buf, 103).ambiguous, nil)
+end)
+
+-- Visible work item IDs: the id column is never cut and lines up in one
+-- column at every width.
+local function with_long_id()
+  local seed = vim.deepcopy(require("tests.fixtures.long_seed"))
+  table.insert(seed.items, { id = 900033, type = "Task", title = "A long title for the item with a six digit ID",
+    state = "To Do", area = "P\\Team\\A", tags = "api; backend" })
+  return seed
+end
+
+test("IDs are never cut: at 100, 60 and 40 columns every row shows its whole ID, in one aligned column", function()
+  for _, width in ipairs({ 100, 60, 40 }) do
+    views.fresh({ seed = with_long_id() })
+    vim.o.columns, vim.o.lines = 120, 24
+    vim.cmd("vsplit")
+    vim.cmd("only")
+    vim.cmd("vsplit")
+    vim.api.nvim_win_set_width(0, width)
+    local buf = open_area()
+    local bars = {}
+    for _, id in ipairs({ 101, 103, 900033 }) do
+      local r = values(buf, id)
+      eq(r.cells[C.id].text, tostring(id), width .. " columns, #" .. id)
+      eq(r.values.id, tostring(id))
+      table.insert(bars, vim.fn.strdisplaywidth(r.body:sub(1, r.ranges[C.id].bar - 1)))
+      ok(vim.fn.strdisplaywidth(r.cells[C.title].text) >= 20, width .. " columns: the title keeps 20 columns")
+    end
+    eq(bars, { 7, 7, 7 }, width .. " columns: the separator after the ID lines up")
+  end
+end)
+
+test("yic and yiw on an ID cell yank just the number", function()
+  setup(60)
+  local buf = open_area()
+  local row = line_of(buf, 103)
+  vim.api.nvim_win_set_cursor(0, { row, lines.prefix_length(buffer_lines(buf)[row]) })
+  vim.fn.setreg('"', "")
+  change("yic")
+  eq(vim.fn.getreg('"'), "103")
+  change("yiw")
+  eq(vim.fn.getreg('"'), "103")
+  eq(vim.bo[buf].modified, false)
 end)

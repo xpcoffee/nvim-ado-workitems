@@ -8,6 +8,7 @@ local registry = require("ado.nvim.registry")
 local table_layout = require("ado.core.table_layout")
 
 local COLUMNS = table_layout.LAYOUTS.full.columns
+local INDENT_CELL = table_layout.LAYOUTS.full.indent
 
 local M = {}
 
@@ -59,7 +60,7 @@ function M.nth(line, index, ranges, offset)
   local r = ranges[index]
   local first = r.first
   -- The type cell's text includes the indent of a child row.
-  if index == 1 then first = math.min(r.last + 1, (line:find("%S", offset + first) or 0) - offset) end
+  if index == INDENT_CELL then first = math.min(r.last + 1, (line:find("%S", offset + first) or 0) - offset) end
   local shift = function(b) return b and b + offset or nil end
   return { index = index, count = #ranges, from = shift(r.from), to = shift(r.to), first = shift(first),
     last = shift(r.last), bar = shift(r.bar), prev_last = index > 1 and shift(ranges[index - 1].last) or nil }

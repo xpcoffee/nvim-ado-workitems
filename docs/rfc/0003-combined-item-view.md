@@ -127,6 +127,7 @@ Task  │ Active │ Wire the export button   │         │
 - C1.3 Withdrawn by Q4: the header shows no iteration, and nothing in the item buffer edits it. The text was: `iteration:` MUST be editable and saved with `:w` like the other field lines. The plugin has no list of iteration paths, so it does not check the value before sending. ADO is expected to refuse a patch with an iteration path the project lacks (not checked for this RFC); the save report then names the item (RFC 0001 R5.15).
 - C1.4 The window bar MUST show the item's ID, type, `rev` and changed date, so the header needs no read-only lines for them.
 - C1.5 `changed`, `rev` and `URL` MUST NOT be editable anywhere. `<leader>wb` keeps opening the URL.
+- Addendum (2026-10-19): the header's first field line is now `id: <number>`, read-only and there to copy, and every parent, child and link row starts with an id column; an edited ID rejects the save. See the addendum on visible work item IDs in plan 0002, after phase 5.
 
 ## 6. Read-only regions and the save
 

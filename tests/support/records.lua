@@ -41,6 +41,7 @@ local function current_of(r, row_id, line)
     if r.slot == "self" then
       c.title = r.title
     else
+      c.shown_id = tostring(r.id)
       c.type, c.state, c.title, c.assignee, c.tags = r.type, r.state, r.title, r.assignee, r.tags
     end
   elseif r.kind == "area" then
@@ -194,7 +195,7 @@ end
 -- Types a new line after current row `after`; fields as lines.parse reads
 -- them (a line without separators is all title).
 function M.new_line(view, after, fields)
-  local c = { kind = "item" }
+  local c = { kind = "item", shown_id = "" }
   for k, v in pairs(fields) do c[k] = v end
   return M.paste(view, { c }, after)
 end

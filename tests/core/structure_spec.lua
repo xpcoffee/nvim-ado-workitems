@@ -53,7 +53,7 @@ test("A0001-6 a titled new line under N's children is one create with parent N a
   local p = compute(s, { v })
   eq(p.rejections, {})
   eq(p.ops, { { kind = "create", type = "Task", title = "Write the changelog", tags = "", area = "P\\Team\\A",
-    parent = 100, project = "P", views = { v.key }, line = 9 } })
+    parent = 100, project = "P", views = { v.key }, line = 10 } })
   local result = run(s, p)
   eq(successful_writes(fake), { "create_work_item" }, "the parent link is part of the create")
   local id = result.created[p.ops[1]]

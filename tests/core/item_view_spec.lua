@@ -277,18 +277,19 @@ test("a linked item in another project is judged by that project's catalog", fun
   eq(ops(fake), { "get_work_item", "query", "work_item_types", "work_item_types" })
 end)
 
-test("the viewed item's type, state, assignee and tags follow its row, one line each", function()
+test("the viewed item's ID, type, state, assignee and tags follow its row, one line each, the ID first", function()
   local view = load(new(), location.item(20))
   local rows = all_rows(item_view.display(view))
   eq(rows[1].slot, "self")
   local fields = {}
-  for i = 2, 5 do
+  for i = 2, 6 do
     eq(rows[i].kind, "field")
     eq(rows[i].id, 20)
     fields[i - 1] = rows[i].field .. "=" .. rows[i].value
   end
-  eq(fields, { "type=User Story", "state=Active", "assignee=" .. (rows[1].assignee or ""), "tags=" .. (rows[1].tags or "") })
-  eq(rows[6].slot, "parent")
+  eq(fields, { "id=20", "type=User Story", "state=Active", "assignee=" .. (rows[1].assignee or ""),
+    "tags=" .. (rows[1].tags or "") })
+  eq(rows[7].slot, "parent")
   eq(item_view.select(item_view.display(view), rows[2]), nil, "a field line")
 end)
 

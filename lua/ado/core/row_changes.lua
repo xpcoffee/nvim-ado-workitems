@@ -52,10 +52,16 @@ end
 
 -- A current item row with no text in any column, such as an empty line.
 function M.blank(c)
+  if trim(c.shown_id) ~= "" then return false end
   for _, f in ipairs(M.FIELDS) do
     if trim(c[f]) ~= "" then return false end
   end
   return true
+end
+
+-- The ID a row shows as text: its work item ID, empty for a typed line.
+local function id_text(s)
+  return s.id and tostring(s.id) or ""
 end
 
 -- The edits current row c makes to s, the row it was loaded as:
@@ -66,6 +72,8 @@ end
 --                 title, and c has the columns of a table row
 --   "separators"  c lacks the separators of a table row
 --   "field_name"  c is a field line naming another field
+--   "id"          c's id cell, or the text of an `id:` field line, no longer
+--                 shows the ID of s, and the ID is read-only
 -- Sub-area rows report a changed name and headings a changed label, which
 -- the plan rejects as read-only.
 function M.changed(s, c)
@@ -78,6 +86,7 @@ function M.changed(s, c)
       return diffs
     end
     if c.type == nil then return diffs, "separators" end
+    if c.shown_id ~= nil and trim(c.shown_id) ~= id_text(s) then return diffs, "id" end
     for _, f in ipairs(M.FIELDS) do
       if M.differs(f, c[f], s[f]) then diffs[f] = M.value(f, c[f]) end
     end
@@ -86,6 +95,10 @@ function M.changed(s, c)
   if c.kind ~= s.kind then return diffs, "kind" end
   if s.kind == "field" then
     if c.field ~= s.field then return diffs, "field_name" end
+    if s.field == "id" then
+      if trim(c.value) ~= trim(s.value) then return diffs, "id" end
+      return diffs
+    end
     if M.differs(s.field, c.value, s.value) then diffs[s.field] = M.value(s.field, c.value) end
   elseif s.kind == "area" then
     if trim(c.name) ~= trim(s.name) then diffs.name = trim(c.name) end

@@ -3,6 +3,7 @@
 -- nvim_feedkeys (plan 0002 section 4), so change() fires it, as the editor
 -- does once a Normal-mode command ends.
 local lines = require("ado.nvim.lines")
+local C = require("ado.core.table_layout").INDEX
 local screen = require("tests.support.screen")
 local seed = require("tests.fixtures.seed")
 local ux_stats = require("ado.nvim.ux_stats")
@@ -65,7 +66,7 @@ local function cell_texts(buf)
   local out = {}
   for i, line in ipairs(buffer_lines(buf)) do
     local p = lines.parse(line)
-    out[i] = { p.type, p.state, p.title, p.assignee, p.tags }
+    out[i] = { p.type, p.state, p.title, p.assignee, p.tags, p.shown_id }
   end
   return out
 end
@@ -78,11 +79,11 @@ end
 test("UX1.1 a change that widens a column re-pads every row on <Esc>", function()
   setup()
   local buf = open_area()
-  to_cell("Add tests", 2)
+  to_cell("Add tests", C.state)
   change("ceIn Progress<Esc>")
   eq(lines.parse(buffer_lines(buf)[vim.fn.line(".")]).state, "In Progress")
   assert_aligned(buf)
-  eq(lines.row_ranges(buffer_lines(buf)[1])[2].to - lines.row_ranges(buffer_lines(buf)[1])[2].from + 1,
+  eq(lines.row_ranges(buffer_lines(buf)[1])[C.state].to - lines.row_ranges(buffer_lines(buf)[1])[C.state].from + 1,
     #" In Progress ", "the state column is as wide as its widest cell")
 end)
 
@@ -90,7 +91,7 @@ test("UX1.1 only the lines whose padding is wrong are rewritten", function()
   setup()
   local buf = open_area()
   local before = buffer_lines(buf)
-  local row = to_cell("Add tests", 2)
+  local row = to_cell("Add tests", C.state)
   change("ceDone<Esc>")
   local after = buffer_lines(buf)
   for i = 1, #before do
@@ -104,7 +105,7 @@ test("UX1.2 one u undoes an edit and its re-pad; <C-r> redoes both", function()
   setup()
   local buf = open_area()
   local before = buffer_lines(buf)
-  to_cell("Add tests", 2)
+  to_cell("Add tests", C.state)
   change("ceIn Progress<Esc>")
   local after = buffer_lines(buf)
   change("u")
@@ -120,7 +121,7 @@ test("UX1.3 during Insert mode only the edited line drifts", function()
   setup()
   local buf = open_area()
   local before = buffer_lines(buf)
-  local row = to_cell("Add tests", 2)
+  local row = to_cell("Add tests", C.state)
   local during
   vim.api.nvim_create_autocmd("InsertLeave", { buffer = buf, once = true,
     callback = function() during = buffer_lines(buf) end })
@@ -136,7 +137,7 @@ test("UX1.3 a blockwise change over the state column of 3 rows works on every ro
   setup()
   local buf = open_area()
   local before = cell_texts(buf)
-  to_cell("Support issue", 2)
+  to_cell("Support issue", C.state)
   -- The block covers the state column's width, "Active".
   change("<C-v>2j5lcClosed<Esc>")
   local after = cell_texts(buf)
@@ -193,8 +194,8 @@ test("a macro's changes are re-padded once it ends; u steps back through them", 
   setup()
   local buf = open_area()
   local before = buffer_lines(buf)
-  to_cell("Support issue", 2)
-  vim.fn.setreg("q", vim.keycode("ceBlocked<Esc>j0f│w"))
+  to_cell("Support issue", C.state)
+  vim.fn.setreg("q", vim.keycode("ceBlocked<Esc>j02f│w"))
   change("2@q")
   local after = cell_texts(buf)
   eq({ after[1][2], after[2][2] }, { "Blocked Do", "Blocked Do" })
@@ -207,7 +208,7 @@ end)
 test("<C-c> leaves Insert mode without InsertLeave; the TextChanged after it re-pads", function()
   setup()
   local buf = open_area()
-  to_cell("Add tests", 2)
+  to_cell("Add tests", C.state)
   change("ceIn Progress<C-c>")
   assert_aligned(buf)
 end)
@@ -239,7 +240,7 @@ test("UX1.4 a re-pad changes nothing the save plans: an edit typed back is nothi
   local env = setup()
   local buf = open_area()
   local record = env.area_view.record(buf)
-  to_cell("Add tests", 2)
+  to_cell("Add tests", C.state)
   change("ceIn Progress<Esc>")
   local edited = env.area_view.record(buf)
   for i, c in ipairs(edited.current) do
@@ -247,7 +248,7 @@ test("UX1.4 a re-pad changes nothing the save plans: an edit typed back is nothi
     for _, f in ipairs({ "type", "title", "assignee", "tags" }) do eq(c[f], s[f], "row " .. i .. " " .. f) end
     if c.title ~= "Add tests" then eq(c.state, s.state, "row " .. i .. " state") end
   end
-  to_cell("Add tests", 2)
+  to_cell("Add tests", C.state)
   change("cicDoing<Esc>")
   ok(vim.bo[buf].modified)
   vim.cmd("write")
@@ -259,18 +260,18 @@ end)
 test("UX1.5 the cursor stays in the same cell, at the same offset in it", function()
   setup()
   local buf = open_area()
-  local row = to_cell("Add tests", 3)
+  local row = to_cell("Add tests", C.title)
   local ranges, offset = lines.row_ranges(buffer_lines(buf)[row])
   -- A change made by a command that leaves the cursor in the title.
-  vim.api.nvim_buf_set_text(buf, row - 1, offset + ranges[2].first - 1, row - 1, offset + ranges[2].last,
+  vim.api.nvim_buf_set_text(buf, row - 1, offset + ranges[C.state].first - 1, row - 1, offset + ranges[C.state].last,
     { "In Progress" })
   ranges = lines.row_ranges(buffer_lines(buf)[row])
-  vim.api.nvim_win_set_cursor(0, { row, offset + ranges[3].first - 1 + 4 })
+  vim.api.nvim_win_set_cursor(0, { row, offset + ranges[C.title].first - 1 + 4 })
   vim.api.nvim_exec_autocmds("TextChanged", { buffer = buf })
   assert_aligned(buf)
   local now = buffer_lines(buf)[row]
   local new_ranges = lines.row_ranges(now)
-  eq(vim.api.nvim_win_get_cursor(0), { row, offset + new_ranges[3].first - 1 + 4 })
+  eq(vim.api.nvim_win_get_cursor(0), { row, offset + new_ranges[C.title].first - 1 + 4 })
   eq(now:sub(vim.fn.col("."), vim.fn.col(".")), "t", "still on the t of 'Add tests'")
 end)
 
@@ -287,7 +288,7 @@ test("UX1.6 end-of-line labels and concealed prefixes survive a re-pad; field an
   end
   local before_labels = label_rows()
   local before = buffer_lines(buf)
-  to_cell("Add tests", 2)
+  to_cell("Add tests", C.state)
   change("ceIn Progress<Esc>")
   assert_aligned(buf)
   eq(label_rows(), before_labels)
@@ -312,7 +313,7 @@ test("UX1.1 the item view's own title is never padded, even when it holds four s
   setup({ seed = odd })
   local buf = open_item(100)
   eq(buffer_lines(buf)[1]:match("^/%d+ (.*)$"), "a│b│c│d│e")
-  to_cell("Add tests", 2)
+  to_cell("Add tests", C.state)
   change("ceIn Progress<Esc>")
   eq(buffer_lines(buf)[1]:match("^/%d+ (.*)$"), "a│b│c│d│e")
 end)
@@ -326,7 +327,7 @@ test("separators sit in the same screen column on every row, in 40, 60 and 78 co
   vim.cmd("vsplit")
   vim.cmd("only")
   local buf = open_area()
-  to_cell("Add tests", 2)
+  to_cell("Add tests", C.state)
   change("ceIn Progress<Esc>")
   for _, width in ipairs({ 40, 60, 78 }) do
     vim.cmd("vsplit")
@@ -362,7 +363,7 @@ test("UX2.2 with the state dots drawn, separators and dots share their screen co
   vim.cmd("vsplit")
   vim.cmd("only")
   local buf = open_area()
-  to_cell("Add tests", 2)
+  to_cell("Add tests", C.state)
   change("ceIn Progress<Esc>")
   ok(dots(buf) >= 4, "the rows have dots")
   local seps, marks
@@ -377,7 +378,7 @@ test("UX2.2 with the state dots drawn, separators and dots share their screen co
     end
   end
   eq(#marks, 1)
-  ok(marks[1] > seps[1] and marks[1] < seps[2], "the dot sits in the state column")
+  ok(marks[1] > seps[C.state - 1] and marks[1] < seps[C.state], "the dot sits in the state column")
 end)
 
 test("UX2.2 a blockwise change over the state column works with the dots in place", function()
@@ -385,7 +386,7 @@ test("UX2.2 a blockwise change over the state column works with the dots in plac
   local buf = open_area()
   ok(dots(buf) >= 3, "the rows have dots")
   local before = cell_texts(buf)
-  to_cell("Support issue", 2)
+  to_cell("Support issue", C.state)
   change("<C-v>2j5lcClosed<Esc>")
   local after = cell_texts(buf)
   for i = 1, 3 do eq(after[i][2], "Closed", "row " .. i) end
@@ -400,7 +401,7 @@ test("UX1.8 each re-pad is timed; a slow one warns once", function()
   local env = setup()
   local buf = open_area()
   ux_stats.SLOW_MS.repad = -1
-  to_cell("Add tests", 2)
+  to_cell("Add tests", C.state)
   change("ceIn Progress<Esc>")
   change("ceDoing<Esc>")
   ux_stats.SLOW_MS.repad = 50

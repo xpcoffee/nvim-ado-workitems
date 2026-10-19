@@ -169,10 +169,10 @@ test("a row whose separators were removed is rejected rather than read as a titl
   local s = new()
   local v = area(s, "P\\Team\\A")
   local c = item_line(v, 101)
-  c.type, c.state, c.assignee, c.tags, c.title = nil, nil, nil, nil, "Task To Do Write API"
+  c.shown_id, c.type, c.state, c.assignee, c.tags, c.title = nil, nil, nil, nil, nil, "101 Task To Do Write API"
   local p = compute(s, { v })
   eq(p.ops, {})
-  ok(p.rejections[1].message:find("four │ separators", 1, true), p.rejections[1].message)
+  ok(p.rejections[1].message:find("five │ separators (id │ type", 1, true), p.rejections[1].message)
 end)
 
 test("an empty title is rejected", function()
@@ -281,4 +281,81 @@ test("UX5.4 a cut title left as it was plans nothing, and a restored edit plans 
   eq(p.ops[1].to, "Write the API, restored in full")
   eq(texts(summary.lines(p))[3], "  #101 title: 'Write API' -> 'Write the API, restored in full'",
     "the summary shows the full title")
+end)
+
+-- Visible work item IDs: the id column and the item's `id:` line are read-only.
+
+test("an edited id cell rejects its row, naming it, and plans none of its other edits", function()
+  local s, fake = new()
+  local v = area(s, "P\\Team\\A")
+  local c = item_line(v, 101)
+  c.shown_id, c.title = "999", "Write the API"
+  local writes = #fake.writes
+  local p = compute(s, { v })
+  eq(p.ops, {})
+  eq(#p.rejections, 1)
+  eq({ p.rejections[1].id, p.rejections[1].line, p.rejections[1].rule }, { 101, c.line, "R5" })
+  eq(p.rejections[1].message, "#101 (line " .. c.line .. ") in ado://area/P/Team/A: the ID is read-only;"
+    .. " put 101 back, or reload")
+  eq(#fake.writes, writes)
+  local _, can_apply = summary.lines(p)
+  eq(can_apply, false)
+end)
+
+test("padding around an id is no edit, and an emptied id cell rejects like a changed one", function()
+  local s = new()
+  local v = area(s, "P\\Team\\A")
+  item_line(v, 101).shown_id = "  101 "
+  eq(compute(s, { v }), { ops = {}, notes = {}, rejections = {} })
+  item_line(v, 101).shown_id = ""
+  local p = compute(s, { v })
+  eq(#p.rejections, 1)
+  ok(p.rejections[1].message:find(": the ID is read-only; put 101 back, or reload", 1, true), p.rejections[1].message)
+end)
+
+test("an edited id: line of the item buffer rejects, and the other field lines still save", function()
+  local s = new()
+  local v = item(s, 102)
+  field_line(v, "id").value = "101"
+  local p = compute(s, { v })
+  eq(p.ops, {})
+  eq(messages(p.rejections), { "#102 (line 2) in ado://item/102: the ID is read-only; put 102 back, or reload" })
+  field_line(v, "id").value = "102"
+  field_line(v, "state").value = "Done"
+  p = compute(s, { v })
+  eq(p.rejections, {})
+  eq(#p.ops, 1)
+  eq({ p.ops[1].id, p.ops[1].name, p.ops[1].to }, { 102, "state", "Done" })
+end)
+
+test("a new line with text in its id column rejects; with the column empty it creates", function()
+  local s = new()
+  local v = area(s, "P\\Team\\A")
+  records.new_line(v, item_line(v, 101), { shown_id = "101", title = "Not a copy" })
+  local p = compute(s, { v })
+  eq(p.ops, {})
+  eq(#p.rejections, 1)
+  ok(p.rejections[1].message:find(": a new line has no ID until the save creates it; leave its id column empty", 1, true),
+    p.rejections[1].message)
+  v = area(s, "P\\Team\\A")
+  records.new_line(v, item_line(v, 101), { title = "A new task" })
+  p = compute(s, { v })
+  eq(p.rejections, {})
+  eq(p.ops[1].kind, "create")
+end)
+
+test("a pasted row keeps the ID it was copied with, so a move and a copy plan as before", function()
+  local s = new()
+  local a, b = area(s, "P\\Team\\A"), area(s, "P\\Team\\B")
+  local rows = records.cut(a, 103)
+  eq(rows[1].shown_id, "103")
+  records.paste(b, rows)
+  local p = compute(s, { a, b })
+  eq(p.rejections, {})
+  eq({ p.ops[1].kind, p.ops[1].id }, { "set_area", 103 })
+  local c = area(s, "P\\Team\\B")
+  records.paste(c, records.yank(area(s, "P\\Team\\A"), 101))
+  p = compute(s, { c })
+  eq(p.rejections, {})
+  eq({ p.ops[1].kind, p.ops[1].copy_of }, { "create", 101 })
 end)

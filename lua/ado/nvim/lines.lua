@@ -1,17 +1,20 @@
 -- Row <-> line text for the views (plan 0001 phases 2 and 3):
 --
---   /<row id> <type> │ <state> │ <title> │ <assignee> │ <tags>
+--   /<row id> <id> │ <type> │ <state> │ <title> │ <assignee> │ <tags>
 --   /<row id> <title>                 (the item view's own item)
---   /<row id>   <field>: <value>      (one line per field beneath it)
+--   /<row id>   <field>: <value>      (one line per field beneath it,
+--                                      `id:` first)
 --   /<row id> ▸ <sub-area name>/
 --   /<row id> ── <heading>
 --
 -- The "/<row id> " prefix is concealed in the buffer (view_buffer.lua).
--- Parsing takes type and state from the first two separators and assignee
--- and tags from the last two, so a title holding "│" or "/" needs no
--- escaping. Rows shown under an expanded row are indented in the type
+-- Parsing takes id, type and state from the first three separators and
+-- assignee and tags from the last two, so a title holding "│" or "/" needs
+-- no escaping. Rows shown under an expanded row are indented in the type
 -- column, and parsing trims the indent (RFC 0001 Q5: indentation carries
--- no meaning).
+-- no meaning). The id cell is parsed into `shown_id`, apart from the
+-- work item ID of loaded rows (`id`), so the save can tell an edited ID
+-- cell from the item the row ID prefix names.
 local table_layout = require("ado.core.table_layout")
 
 local M = {}
@@ -40,9 +43,22 @@ local function trim(s)
 end
 
 local COLUMNS = LAYOUT.columns
+M.ID_KEY = "shown_id"
+
+-- The value column c of core row r shows: the ID as text for the id
+-- column (none on a typed line), else the row's field.
+function M.value(r, c)
+  if c == "id" then return r.id and tostring(r.id) or "" end
+  return r[c] or ""
+end
+
+-- The key of a parsed row that holds column c's text.
+function M.key(c)
+  return c == "id" and M.ID_KEY or c
+end
 
 local function cell(r, c)
-  local text = r[c] or ""
+  local text = c == "id" and (r[M.ID_KEY] or M.value(r, c)) or (r[c] or "")
   if c == "type" and (r.depth or 0) > 0 then text = string.rep(INDENT, r.depth) .. text end
   return text
 end
@@ -65,7 +81,7 @@ function M.render(rows, ids, widths, exact)
     for _, r in ipairs(rows) do
       if r.kind == "item" and r.slot ~= "self" then table.insert(table_rows, columns_of(r)) end
     end
-    widths = table_layout.widths(table_rows, M.measure, widths or { 0, 0, 0, 0, 0 })
+    widths = table_layout.widths(table_rows, M.measure, widths or { 0, 0, 0, 0, 0, 0 })
   end
   local out, prefixes = {}, {}
   for i, r in ipairs(rows) do
@@ -144,8 +160,8 @@ function M.field_gap(line)
 end
 
 -- { row_id, kind = "area", name }, { row_id, kind = "heading", label } or
--- { row_id, kind = "item", type, state, assignee, tags, title }. A line
--- without a row ID prefix has row_id nil.
+-- { row_id, kind = "item", shown_id, type, state, assignee, tags, title }.
+-- A line without a row ID prefix has row_id nil.
 function M.parse(line)
   local id, rest = line:match("^/(%d+) (.*)$")
   if not id then rest = line end
@@ -164,7 +180,7 @@ function M.parse(line)
     return { row_id = row_id, kind = "item", title = trim(rest) }
   end
   local p = { row_id = row_id, kind = "item" }
-  for i, text in ipairs(table_layout.cells(rest, ranges)) do p[COLUMNS[i]] = trim(text) end
+  for i, text in ipairs(table_layout.cells(rest, ranges)) do p[M.key(COLUMNS[i])] = trim(text) end
   return p
 end
 

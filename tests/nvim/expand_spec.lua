@@ -37,7 +37,7 @@ test("<Tab> inserts the child rows under the right row, indented; <Tab> again re
   eq(parsed(buf), { "Checkout story", "Parent: none", "P\\Team\\A", "Children: 2", "Write API", "Add tests",
     "Test fixtures", "Related: 1", "Payments story" })
   local inserted = buffer_lines()[at + 1]
-  ok(inserted:find("^/%d+   Task%s+│"), inserted)
+  ok(inserted:find("^/%d+ 106%s+│   Task%s+│"), inserted)
   for i = 1, at do eq(buffer_lines()[i], before[i], "line " .. i .. " is untouched") end
   eq(vim.bo[buf].modified, false)
   local marks = vim.api.nvim_buf_get_extmarks(buf, vim.api.nvim_get_namespaces().ado_view, 0, -1, {})

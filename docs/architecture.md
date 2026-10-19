@@ -97,6 +97,26 @@ Each row starts with a session-wide row ID, `/12 `, which the buffer
 conceals; `nvim/registry.lua` maps it to what the row shows. Rows are read
 by ID, never by matching text, so two items with the same title stay apart.
 Views are edited in place and saved with `:w`; see "Saving views" below.
+In Normal mode the cursor is moved out of the concealed prefix
+(`view_buffer.lua`, on `CursorMoved`), because it shows on the first
+visible character there and `yiw` would yank the hidden `/`.
+
+An item row's cells are, in order:
+
+```text
+/12 900033 │ Task │ To Do │ Fix the login │ Alex Smith │ api; backend
+    id       type   state   title           assignee     tags
+```
+
+The **id** cell shows the work item's ID so it can be copied; it is
+display only. The row ID prefix, not the id cell, says which item a line
+is, so moves and copies are decided as before. The parse rule
+(`nvim/lines.lua`, `core/table_layout.lua`) takes id, type and state from
+the first three separators and assignee and tags from the last two, so a
+title holding `│` stays one cell. Child rows under an expanded row are
+indented in the type cell, the layout's **indent cell**, so the IDs line
+up in one column. A parsed row holds the id cell's text as `shown_id`,
+apart from `id`, the work item ID of a loaded row.
 
 Item rows are padded with real spaces to the widest cell of each column,
 up to the widths that fit the window (`core/table_layout.lua`; see
@@ -169,10 +189,11 @@ including concealed text and inline virtual text, so a row is fitted by
 its real text: the row ID prefix and the state dot count towards its
 width, and one column stays free for the cursor after the last character
 in Insert mode. `core/table_layout.lua` picks the column widths for a text
-width (`budget`): columns whose cells are short keep their width, the
-title gets the rest and no less than 20 columns, and when that is not
-enough the tags collapse to `…`, the type shows as a letter, then the
-assignee shortens to 8 columns. A tags cell collapsed to `…` keeps its
+width (`budget`): the id column takes its full width first and is never
+cut, since a cut ID could not be copied; columns whose cells are short
+keep their width, the title gets the rest and no less than 20 columns,
+and when that is not enough the tags collapse to `…`, the type shows as a
+letter, then the assignee shortens to 8 columns. A tags cell collapsed to `…` keeps its
 separator, so every row parses by the one rule above in any layout.
 
 A cell longer than its column is cut in the buffer text and ends in `…`
@@ -286,11 +307,12 @@ change plan never receives them.
 
 ```text
 /1 Checkout story              header: rows with row IDs, edited and saved with :w
-/2   type:     User Story
+/2   id:       100             the item's ID, read-only
+/3   type:     User Story
 ...
-/9 ── Related: 1
-/10 User Story │ New │ ...
-/11 ── Details                 boundary row: a fixed row, the last row
+/10 ── Related: 1
+/11 105 │ User Story │ New │ ...
+/12 ── Details                 boundary row: a fixed row, the last row
     changed:   2026-10-01 11:00 · rev 1      read-only region: plain text
     description:
     Let customers pay at checkout.
@@ -642,6 +664,14 @@ since the load would replace the edits.
 
 ### Column edits
 
+- **ID.** The id column and the item buffer's `id:` line are read-only.
+  `core/row_changes.lua` compares a row's id cell with the ID of the item
+  its row ID names (padding aside) and reports `id` when they differ;
+  the plan rejects the row ("the ID is read-only; put 101 back, or
+  reload") and plans none of its other edits, so nothing is sent. A new
+  line with text in its id column rejects too, since ADO gives the ID. A
+  pasted row keeps the ID text it was copied with, which equals the
+  ID of its origin row, so it passes.
 - **Assignee (R5.19).** The text must name exactly one identity: one that
   equals a display name or email, else the only identity whose name or
   email starts with the text. None or several reject the save, naming the

@@ -19,6 +19,7 @@ local NS = vim.api.nvim_create_namespace("ado_decorations")
 
 local DEFAULT_ICONS = { state = "●", changed = "~", new = "+" }
 local COLUMNS = table_layout.LAYOUTS.full.columns
+local INDEX = table_layout.INDEX
 local warned_icons = false
 
 -- The configured icons; one that is not one column wide keeps its default,
@@ -56,7 +57,7 @@ local function read(line)
   end
   if r and r.kind == "table" then
     local p = { row_id = id, kind = "item" }
-    for _, c in ipairs(COLUMNS) do p[c] = r.values[c] end
+    for _, c in ipairs(COLUMNS) do p[lines.key(c)] = r.values[c] end
     return { row = p, reg = reg, ranges = r.ranges, offset = r.offset }
   end
   local p = lines.parse(line)
@@ -128,9 +129,9 @@ function M.refresh(buf, ctx)
     local project = r.reg and r.reg.row.project or view_project
     if r.ranges then
       local p = r.row
-      local tr, sr = r.ranges[1], r.ranges[2]
+      local tr, sr = r.ranges[INDEX.type], r.ranges[INDEX.state]
       local type_range = { first = r.offset + tr.first, last = r.offset + tr.last }
-      -- The indent of a child row is part of the first cell; colour only
+      -- The indent of a child row is part of the type cell; colour only
       -- the type name.
       local indent = #(text[i]:sub(type_range.first, type_range.last):match("^%s*"))
       type_range.first = type_range.first + indent

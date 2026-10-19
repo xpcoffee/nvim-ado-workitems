@@ -15,6 +15,7 @@ vim.opt.rtp:prepend(root)
 
 local fit = require("ado.nvim.fit")
 local lines = require("ado.nvim.lines")
+local C = require("ado.core.table_layout").INDEX
 local realign = require("ado.nvim.realign")
 local registry = require("ado.nvim.registry")
 local types = require("ado.core.types")
@@ -71,7 +72,7 @@ local function view(n)
   return buf, data, ids
 end
 
--- Replaces cell `index` of line `row` (0-based) with text, as an edit of
+-- Replaces cell `index` (table_layout.INDEX) of line `row` (0-based) with text, as an edit of
 -- the user's: a new undo step.
 local function set_cell(buf, row, index, text)
   vim.o.undolevels = vim.o.undolevels
@@ -132,10 +133,10 @@ for _, n in ipairs({ 200, 1000 }) do
   -- own line needs new padding.
   local row = 1
   local same_med, same_max, same_all, same_lines = measure(buf, function(i)
-    set_cell(buf, row, 3, i % 2 == 0 and "fix" or "fix it")
+    set_cell(buf, row, C.title, i % 2 == 0 and "fix" or "fix it")
   end)
   local widen_med, widen_max, widen_all, widen_lines = measure(buf, function()
-    set_cell(buf, row, 2, "Waiting for the review board")
+    set_cell(buf, row, C.state, "Waiting for the review board")
   end)
   for _, c in ipairs({ { "no width change", same_med, same_max, same_all, TARGETS[n].same, same_lines },
     { "widens a column", widen_med, widen_max, widen_all, TARGETS[n].widen, widen_lines } }) do
@@ -169,16 +170,16 @@ end
 -- steps takes under 25 ms.
 local READONLY_EXTRA, QUIET_WRITE = 1, 25
 local plain = item_buffer(0)
-local _, _, plain_changed = measure(plain, function(i) set_cell(plain, 1, 3, i % 2 == 0 and "fix" or "fix it") end)
+local _, _, plain_changed = measure(plain, function(i) set_cell(plain, 1, C.title, i % 2 == 0 and "fix" or "fix it") end)
 local item = item_buffer(1000)
-local _, _, item_changed = measure(item, function(i) set_cell(item, 1, 3, i % 2 == 0 and "fix" or "fix it") end)
+local _, _, item_changed = measure(item, function(i) set_cell(item, 1, C.title, i % 2 == 0 and "fix" or "fix it") end)
 local extra = item_changed - plain_changed
 local extra_ok = extra < READONLY_EXTRA
 if not extra_ok then missed = missed + 1 end
 table.insert(out, string.format("%-6s %-16s %8s %10s %10s %14.2f %6s %s", "item", "1,000 below", "-", "-", "-",
   item_changed, string.format("%+.2f", extra) .. " < " .. READONLY_EXTRA, extra_ok and "ok" or "MISSED"))
 for i = 1, 100 do
-  set_cell(item, 1, 3, "edit " .. i)
+  set_cell(item, 1, C.title, "edit " .. i)
   realign.run(item)
 end
 local steps = vim.api.nvim_buf_call(item, function() return vim.fn.undotree().seq_last end)

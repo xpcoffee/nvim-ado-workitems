@@ -168,7 +168,7 @@ test("the item view's title line and state line save the title and the state", f
   eq(env.fake.items[102].fields["System.State"], "Done")
   eq(env.fake.counts.patch_work_item, 1, "both changes to #102 are one write")
   eq(shown(buf)[1], "Add more tests")
-  eq(shown(buf)[3], "state: Done")
+  eq(shown(buf)[4], "state: Done")
 end)
 
 test("a type line edit whose current state the new type lacks is rejected, with no calls (R5.22)", function()

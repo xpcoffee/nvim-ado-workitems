@@ -2,6 +2,7 @@
 -- UX2.7). Headless Neovim does not fire TextChanged after keys fed with
 -- nvim_feedkeys (plan 0002 section 4), so change() fires it.
 local lines = require("ado.nvim.lines")
+local C = require("ado.core.table_layout").INDEX
 local seed = require("tests.fixtures.seed")
 local views = require("tests.support.views")
 local cursor_to = views.cursor_to
@@ -126,11 +127,11 @@ test("UX2.2 a state typed over takes its colour; one the type lacks falls back t
   local buf = open_area()
   local row = line_showing("Write API")
   local ranges, offset = lines.row_ranges(vim.api.nvim_get_current_line())
-  vim.api.nvim_win_set_cursor(0, { row, offset + ranges[2].first - 1 })
+  vim.api.nvim_win_set_cursor(0, { row, offset + ranges[C.state].first - 1 })
   change("c2eDoing<Esc>")
   eq(lines.parse(vim.api.nvim_get_current_line()).state, "Doing")
   eq(decorations(buf)[row].dot[2], "AdoColor_007acc")
-  vim.api.nvim_win_set_cursor(0, { row, offset + ranges[2].first - 1 })
+  vim.api.nvim_win_set_cursor(0, { row, offset + ranges[C.state].first - 1 })
   change("ceBogus<Esc>")
   eq(decorations(buf)[row].dot[2], "AdoState")
 end)
@@ -154,7 +155,7 @@ test("UX2.4 whitespace and a re-pad alone mark nothing", function()
   local buf = open_area()
   local row = line_showing("Write API")
   local ranges, offset = lines.row_ranges(vim.api.nvim_get_current_line())
-  vim.api.nvim_win_set_cursor(0, { row, offset + ranges[3].last })
+  vim.api.nvim_win_set_cursor(0, { row, offset + ranges[C.title].last })
   change("a   <Esc>")
   eq(decorations(buf)[row].sign, nil)
 end)

@@ -26,7 +26,8 @@
 --            that row when it is where it was rendered (C2.1, C2.3).
 --   snapshot row = a core view row (area_view.lua, item_view.lua) plus
 --            row_id and line
---   current row  = { row_id | nil, line, kind, title, state, type, assignee,
+--   current row  = { row_id | nil, line, kind, shown_id (the text of the
+--            id cell; nil when not read), title, state, type, assignee,
 --            tags (items), name (areas), label (headings), field, value
 --            (fields), origin = { key, row } | nil, ambiguous = { column... }
 --            | nil }; origin is set for a row ID this view did not load (a
@@ -158,6 +159,10 @@ function M.choose_identity(found, text)
   end
   return nil, string.format("'%s' matches %d identities (%s%s); type more of the name, or the email", text,
     #found, table.concat(names, ", "), #found > 5 and ", ..." or "")
+end
+
+local function id_message(id)
+  return string.format("the ID is read-only; put %d back, or reload", id)
 end
 
 local function where(view, line, id)
@@ -568,8 +573,10 @@ function M.compute(views, prepared)
       reject(view, c.line, s.id, "R5", "this row was copied from an item's own title line, which holds only"
         .. " the title; put it back as it was copied, or reload")
     elseif problem == "separators" then
-      reject(view, c.line, s.id, "R5",
-        "the row needs its four │ separators (type │ state │ title │ assignee │ tags); restore them, or reload")
+      reject(view, c.line, s.id, "R5", "the row needs its five │ separators"
+        .. " (id │ type │ state │ title │ assignee │ tags); restore them, or reload")
+    elseif problem == "id" then
+      reject(view, c.line, s.id, "R5", id_message(s.id))
     end
     -- A cut cell with no known value has rejected the row; it edits nothing.
     for _, a in ipairs(c.ambiguous or {}) do diffs[a] = nil end
@@ -612,6 +619,8 @@ function M.compute(views, prepared)
           "this line no longer reads as a " .. s.kind .. " row; undo the change, or reload")
       elseif problem == "field_name" then
         reject(view, c.line, s.id, "R5", "field names are read-only")
+      elseif problem == "id" then
+        reject(view, c.line, s.id, "R5", id_message(s.id))
       elseif diffs.name then
         reject(view, c.line, nil, "R5.16", "area rows are read-only")
       elseif diffs.label then
@@ -1012,6 +1021,9 @@ function M.compute(views, prepared)
         local function invalid(rule, message)
           bad(rule, message)
           valid = false
+        end
+        if trim(c.shown_id) ~= "" then
+          invalid("R5", "a new line has no ID until the save creates it; leave its id column empty")
         end
         if trim(c.title) == "" then invalid("R5.17", "a new line needs a title") end
         if trim(c.state) ~= "" then

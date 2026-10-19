@@ -129,6 +129,17 @@ local function conceal(buf)
   end
 end
 
+-- Moves the cursor of the current window out of a row's concealed row ID
+-- prefix, in Normal mode. The cursor shows on the first visible character
+-- there, the ID, but `yiw` would yank the hidden "/".
+local function out_of_prefix(buf)
+  if vim.api.nvim_get_mode().mode ~= "n" then return end
+  local row, col = unpack(vim.api.nvim_win_get_cursor(0))
+  if not region.readable(buf, row) then return end
+  local n = lines_mod.prefix_length(vim.api.nvim_get_current_line())
+  if col < n then vim.api.nvim_win_set_cursor(0, { row, n }) end
+end
+
 -- Returns the buffer and whether it was created now.
 -- opts: syntax (the syntax file, "adoarea" or "adoitem"); ids(buf) -> the
 -- row ID of each loaded line; project(buf) -> the project of a line that
@@ -164,6 +175,10 @@ function M.get_or_create(name, filetype, opts)
   vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
     buffer = buf,
     callback = function() conceal(buf) end,
+  })
+  vim.api.nvim_create_autocmd("CursorMoved", {
+    buffer = buf,
+    callback = function() out_of_prefix(buf) end,
   })
   vim.api.nvim_create_autocmd("BufWinEnter", {
     buffer = buf,
@@ -382,7 +397,7 @@ function M.record(buf, kind, state_filter, ids, extra)
     local r = fit.read(text)
     if r then
       for column, value in pairs(r.values) do
-        if r.kind == "field" then p.value = value else p[column] = value end
+        if r.kind == "field" then p.value = value else p[lines_mod.key(column)] = value end
       end
       p.ambiguous = r.ambiguous
     end

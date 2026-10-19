@@ -23,30 +23,37 @@ local function texts(text)
   return layout.cells(text, layout.ranges(text, FULL))
 end
 
+test("the id column comes first, and the type column holds the indent", function()
+  eq(FULL.columns, { "id", "type", "state", "title", "assignee", "tags" })
+  eq(FULL.indent, layout.INDEX.type)
+  eq(layout.ordered({ id = 6, type = 4, state = 5, title = 20, assignee = 8, tags = 1 }), { 6, 4, 5, 20, 8, 1 })
+end)
+
 test("widths take the widest cell per column, measured, with the indent of child rows", function()
   local w = layout.widths({
-    { "Task", "To Do", "修复登录", "", "" },
-    { "    Task", "Active", "Fix…", "Alex Smith", "api" },
+    { "12", "Task", "To Do", "修复登录", "", "" },
+    { "900033", "    Task", "Active", "Fix…", "Alex Smith", "api" },
   }, display)
-  eq(w, { 8, 6, 8, 10, 3 })
-  eq(layout.widths({ { "Task", "To Do", "修复登录", "", "" } }, codepoints), { 4, 5, 4, 0, 0 })
-  eq(layout.widths({ { "Bug", "New", "x", "", "" } }, codepoints, { 10, 2, 0, 0, 0 }), { 10, 3, 1, 0, 0 },
+  eq(w, { 6, 8, 6, 8, 10, 3 })
+  eq(layout.widths({ { "7", "Task", "To Do", "修复登录", "", "" } }, codepoints), { 1, 4, 5, 4, 0, 0 })
+  eq(layout.widths({ { "7", "Bug", "New", "x", "", "" } }, codepoints, { 3, 10, 2, 0, 0, 0 }), { 3, 10, 3, 1, 0, 0 },
     "kept widths only widen")
 end)
 
 test("pad aligns the separators and drops trailing spaces", function()
-  local w = { 10, 6, 5, 10, 3 }
-  eq(layout.pad({ "Task", "To Do", "Short", "", "" }, w, codepoints),
-    "Task       │ To Do  │ Short │            │")
-  eq(layout.pad({ "User Story", "Active", "修复", "Alex Smith", "api" }, w, display),
-    "User Story │ Active │ 修复  │ Alex Smith │ api")
+  local w = { 6, 10, 6, 5, 10, 3 }
+  eq(layout.pad({ "12", "Task", "To Do", "Short", "", "" }, w, codepoints),
+    "12     │ Task       │ To Do  │ Short │            │")
+  eq(layout.pad({ "900033", "User Story", "Active", "修复", "Alex Smith", "api" }, w, display),
+    "900033 │ User Story │ Active │ 修复  │ Alex Smith │ api")
 end)
 
-test("pad round-trips through ranges, for indented rows and empty cells", function()
+test("pad round-trips through ranges, for indented rows, empty cells and an empty id", function()
   local rows = {
-    { "Task", "To Do", "Fix the … login", "Alex Smith", "api; backend" },
-    { "    Task", "", "修复登录", "", "" },
-    { "", "", "", "", "" },
+    { "900033", "Task", "To Do", "Fix the … login", "Alex Smith", "api; backend" },
+    { "7", "    Task", "", "修复登录", "", "" },
+    { "", "  Bug", "New", "typed", "", "" },
+    { "", "", "", "", "", "" },
   }
   local w = layout.widths(rows, display)
   for _, cells in ipairs(rows) do
@@ -57,36 +64,40 @@ test("pad round-trips through ranges, for indented rows and empty cells", functi
 end)
 
 test("S13 a title holding the separator and a slash stays one cell", function()
-  local text = layout.pad({ "Task", "To Do", "x │ y / z/ │ w", "Alex", "a" }, { 4, 5, 14, 4, 1 }, codepoints)
-  eq(texts(text), { "Task", "To Do", "x │ y / z/ │ w", "Alex", "a" })
+  local text = layout.pad({ "12", "Task", "To Do", "x │ y / z/ │ w", "Alex", "a" }, { 2, 4, 5, 14, 4, 1 },
+    codepoints)
+  eq(texts(text), { "12", "Task", "To Do", "x │ y / z/ │ w", "Alex", "a" })
   local r = layout.ranges(text, FULL)
-  eq(text:sub(r[3].first, r[3].last), "x │ y / z/ │ w")
+  eq(text:sub(r[4].first, r[4].last), "x │ y / z/ │ w")
 end)
 
 test("a line with fewer separators than the layout needs has no cells", function()
-  eq(layout.ranges("Task │ To Do │ title │ me", FULL), nil)
+  eq(layout.ranges("12 │ Task │ To Do │ title │ me", FULL), nil)
+  eq(layout.ranges("Task │ To Do │ title │ me │ tags", FULL), nil, "a row without its id separator")
   eq(layout.ranges("just a title", FULL), nil)
 end)
 
 test("edits rewrite only the wrong runs of spaces, from the right", function()
-  local w = { 4, 11, 5, 4, 1 }
-  local text = "Task │ In Progress │ Short │ Alex │ a"
+  local w = { 2, 4, 11, 5, 4, 1 }
+  local text = "12 │ Task │ In Progress │ Short │ Alex │ a"
   eq(layout.edits(text, layout.ranges(text, FULL), w, codepoints), {})
-  local drifted = "Task │ Active │ Short │ Alex │ a"
+  local drifted = "12 │ Task │ Active │ Short │ Alex │ a"
   local edits = layout.edits(drifted, layout.ranges(drifted, FULL), w, codepoints)
   eq(#edits, 1, "only the run after the state")
   local fixed = layout.apply(drifted, edits)
-  eq(fixed, "Task │ Active      │ Short │ Alex │ a")
+  eq(fixed, "12 │ Task │ Active      │ Short │ Alex │ a")
   eq(texts(fixed), texts(drifted), "the cells' text is untouched")
 end)
 
 test("edits fix missing spaces, tabs, trailing spaces and empty cells", function()
-  local w = { 4, 5, 5, 4, 0 }
+  local w = { 2, 6, 5, 5, 4, 0 }
   local cases = {
-    { "Task│To Do│Short│Alex│", "Task │ To Do │ Short │ Alex │" },
-    { "Task\t│ To Do │ Short │ Alex │   ", "Task │ To Do │ Short │ Alex │" },
-    { "Task │  │ Short │ │", "Task │       │ Short │      │" },
-    { "  Task │ To Do │ Short │ Alex │ ", "  Task │ To Do │ Short │ Alex │" },
+    { "12│Task│To Do│Short│Alex│", "12 │ Task   │ To Do │ Short │ Alex │" },
+    { "12\t│ Task\t│ To Do │ Short │ Alex │   ", "12 │ Task   │ To Do │ Short │ Alex │" },
+    { "12 │ Task │  │ Short │ │", "12 │ Task   │       │ Short │      │" },
+    { "12 │   Task │ To Do │ Short │ Alex │ ", "12 │   Task │ To Do │ Short │ Alex │" },
+    { "  12 │ Task │ To Do │ Short │ Alex │", "12 │ Task   │ To Do │ Short │ Alex │" },
+    { "│ Task │ To Do │ Short │ Alex │", "   │ Task   │ To Do │ Short │ Alex │" },
   }
   for _, c in ipairs(cases) do
     local text = c[1]
@@ -99,45 +110,62 @@ end)
 
 -- Natural widths at least as wide as every budget, so the table of UX4.1
 -- holds exactly.
-local WIDE = { type = 12, letters = 1, state = 12, title = 120, assignee = 20, tags = 20 }
+-- The id column is 6 wide: with its separator it takes 9 columns before
+-- any other.
+local WIDE = { id = 6, type = 12, letters = 1, state = 12, title = 120, assignee = 20, tags = 20 }
 
 test("UX4.1 the layout at each boundary of the plan's table, the dot counted", function()
   local cases = {
     -- text width minus prefix, step, title, type, assignee, tags
-    { 98, "full", 36, 10, 14, 14 },
-    { 82, "full", 20, 10, 14, 14 },
-    { 81, "tags", 32, 10, 14, 1 },
-    { 69, "tags", 20, 10, 14, 1 },
-    { 68, "letters", 28, 1, 14, 1 },
-    { 65, "letters", 25, 1, 14, 1 },
-    { 64, "letters", 24, 1, 14, 1 },
-    { 60, "letters", 20, 1, 14, 1 },
-    { 59, "assignee", 25, 1, 8, 1 },
-    { 56, "assignee", 22, 1, 8, 1 },
-    { 55, "assignee", 21, 1, 8, 1 },
-    { 54, "assignee", 20, 1, 8, 1 },
-    { 50, "assignee", 20, 1, 8, 1 },
-    { 49, "assignee", 20, 1, 8, 1 },
+    { 107, "full", 36, 10, 14, 14 },
+    { 91, "full", 20, 10, 14, 14 },
+    { 90, "tags", 32, 10, 14, 1 },
+    { 78, "tags", 20, 10, 14, 1 },
+    { 77, "letters", 28, 1, 14, 1 },
+    { 74, "letters", 25, 1, 14, 1 },
+    { 73, "letters", 24, 1, 14, 1 },
+    { 69, "letters", 20, 1, 14, 1 },
+    { 68, "assignee", 25, 1, 8, 1 },
+    { 65, "assignee", 22, 1, 8, 1 },
+    { 64, "assignee", 21, 1, 8, 1 },
+    { 63, "assignee", 20, 1, 8, 1 },
+    { 59, "assignee", 20, 1, 8, 1 },
+    { 58, "assignee", 20, 1, 8, 1 },
   }
   for _, c in ipairs(cases) do
     local b = layout.budget(c[1], WIDE, 2)
     eq({ b.step, b.widths.title, b.widths.type, b.widths.assignee, b.widths.tags }, { c[2], c[3], c[4], c[5], c[6] },
       "text width " .. c[1])
     eq(b.widths.state, 10)
+    eq(b.widths.id, 6, "the id is never cut, at text width " .. c[1])
     eq(b.letters, c[2] == "letters" or c[2] == "assignee")
   end
 end)
 
 test("UX4.1 narrow columns keep their width, and the title gets the rest", function()
-  local b = layout.budget(98, { type = 4, letters = 1, state = 6, title = 120, assignee = 10, tags = 0 }, 2)
+  local b = layout.budget(98, { id = 6, type = 4, letters = 1, state = 6, title = 120, assignee = 10, tags = 0 }, 2)
   eq(b.step, "full")
-  eq(b.widths, { type = 4, state = 6, title = 98 - 2 - 12 - 20, assignee = 10, tags = 0 })
-  local wide = layout.budget(200, { type = 4, letters = 1, state = 6, title = 30, assignee = 25, tags = 40 }, 2)
-  eq(wide.widths, { type = 4, state = 6, title = 30, assignee = 25, tags = 40 },
+  eq(b.widths, { id = 6, type = 4, state = 6, title = 98 - 2 - 15 - 26, assignee = 10, tags = 0 })
+  local wide = layout.budget(200, { id = 6, type = 4, letters = 1, state = 6, title = 30, assignee = 25, tags = 40 }, 2)
+  eq(wide.widths, { id = 6, type = 4, state = 6, title = 30, assignee = 25, tags = 40 },
     "with room to spare nothing is cut")
-  local short = layout.budget(70, { type = 4, letters = 1, state = 6, title = 10, assignee = 30, tags = 30 }, 2)
+  local short = layout.budget(70, { id = 6, type = 4, letters = 1, state = 6, title = 10, assignee = 30, tags = 30 },
+    2)
   eq(short.widths.title, 10, "a short title keeps its width")
-  eq(short.widths.assignee + short.widths.tags, 70 - 2 - 12 - 4 - 6 - 10, "the room left goes back to the cut columns")
+  eq(short.widths.assignee + short.widths.tags, 70 - 2 - 15 - 6 - 4 - 6 - 10,
+    "the room left goes back to the cut columns, never to the id")
+  eq(short.widths.id, 6)
+end)
+
+test("UX4.1 at any width the id keeps its natural width, counted before the title", function()
+  for _, width in ipairs({ 200, 60, 40, 20, 5 }) do
+    local b = layout.budget(width, { id = 10, type = 12, letters = 1, state = 12, title = 120, assignee = 20,
+      tags = 20 }, 2)
+    eq(b.widths.id, 10, "text width " .. width)
+    eq(b.widths.title >= 20, true, "the title keeps its floor at text width " .. width)
+  end
+  eq(layout.budget(80, { id = 0, type = 4, letters = 1, state = 4, title = 100, assignee = 0, tags = 0 }, 2)
+    .widths.id, 0, "a view of typed lines only has an empty id column")
 end)
 
 test("UX4.1 letters take the widest indent, and a short title is not padded to 20", function()
@@ -226,13 +254,13 @@ test("restore: random head edits, cut again after each, equal the same edits mad
 end)
 
 test("edits with replacement texts rewrite a cut cell and re-pad around it", function()
-  local w = { 4, 6, 10, 4, 1 }
-  local text = "Task │ Active │ Fix the lo │ Alex │ …"
+  local w = { 2, 4, 6, 10, 4, 1 }
+  local text = "12 │ Task │ Active │ Fix the lo │ Alex │ …"
   local r = layout.ranges(text, FULL)
-  local fixed = layout.apply(text, layout.edits(text, r, w, codepoints, { nil, nil, "Fix the l…" }))
-  eq(fixed, "Task │ Active │ Fix the l… │ Alex │ …")
-  eq(layout.edits(fixed, layout.ranges(fixed, FULL), w, codepoints, { nil, nil, "Fix the l…" }), {})
-  local empty = "Task │ Active │ │ Alex │"
-  eq(layout.apply(empty, layout.edits(empty, layout.ranges(empty, FULL), w, codepoints, { nil, nil, "New" })),
-    "Task │ Active │ New        │ Alex │")
+  local fixed = layout.apply(text, layout.edits(text, r, w, codepoints, { nil, nil, nil, "Fix the l…" }))
+  eq(fixed, "12 │ Task │ Active │ Fix the l… │ Alex │ …")
+  eq(layout.edits(fixed, layout.ranges(fixed, FULL), w, codepoints, { nil, nil, nil, "Fix the l…" }), {})
+  local empty = "12 │ Task │ Active │ │ Alex │"
+  eq(layout.apply(empty, layout.edits(empty, layout.ranges(empty, FULL), w, codepoints, { nil, nil, nil, "New" })),
+    "12 │ Task │ Active │ New        │ Alex │")
 end)

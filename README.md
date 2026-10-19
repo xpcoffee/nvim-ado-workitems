@@ -32,8 +32,8 @@ require("ado").setup({
 
 `require("ado").area_view()` picks an area from `area_paths` and lists its
 sub-areas, then its work items; `area_view("Project/Team")` opens one
-directly. Each item row shows type, state, assignee, tags and title. In an
-area view:
+directly. Each item row shows the work item's ID, then its type, state,
+title, assignee and tags. In an area view:
 
 | Key | Action |
 | --- | --- |
@@ -60,7 +60,8 @@ require("ado").setup({
 ## My work items
 
 `require("ado").my_items()` lists the open work items assigned to you, in
-the configured projects, as rows of type, state, title, assignee and tags.
+the configured projects, as rows of ID, type, state, title, assignee and
+tags.
 It is an editable list like the area view, in the same window above the
 item buffer, named `ado://query/mine?state=open&type=&tag=`. It has the area
 view's keys except the two that need an area (`-` for the parent area,
@@ -102,10 +103,11 @@ open it too, in the item window. `item_view()` with no ID asks for one.
 
 The buffer has three parts:
 
-1. The **header**: the item's title and its `type:`, `state:`,
+1. The **header**: the item's title and its `id:`, `type:`, `state:`,
    `assignee:` and `tags:` lines, its parent, its area path, its children,
-   then its Related links. You edit it in place and save with `:w` (see
-   "Editing the views").
+   then its Related links. The parent, child and link rows have the same
+   columns as an area view's rows, ID first. You edit the header in place
+   and save with `:w` (see "Editing the views").
 2. Below a `── Details` line, the **details**: a `changed:` line with the
    date, time and revision, and the description as markdown. The details
    are read-only text: you can move through them, search and yank, but an
@@ -248,6 +250,19 @@ lists. The window bar shows the view's counts on the right, with the rows
 edited, new and removed since the last load: `0 sub-areas · 6 items ·
 1 edited · 1 removed`.
 
+Work item IDs are there to copy. Every row starts with an ID column, and
+the item buffer's first field line is `id: <number>`; `yic` or `yiw` on
+either yanks just the number. IDs are read-only: a changed ID cell or
+`id:` line makes `:w` refuse that row, naming it ("the ID is read-only;
+put 101 back, or reload"), and nothing is sent. Leave the ID column of a
+line you type empty (` │ Task │ │ My new task │ │`, or a title alone);
+its ID shows once the save has created it and the view reloads. A row you
+paste keeps the ID it was copied with, so a copy (`yyp`) shows the
+original's ID until the save gives it its own. What a pasted row does is
+decided by the hidden row ID at the start of each line, never by the ID
+column. The cursor never rests on that hidden row ID in Normal mode, so
+`0` or `G` then `yiw` yanks the ID.
+
 Rows can also be deleted, pasted, moved or added, and their type, assignee
 and tags changed; `docs/architecture.md` describes what each edit does.
 Every type a row sets must be one of its project's `types` in `setup()`:
@@ -262,14 +277,14 @@ reload (`<leader>wr`, which asks before discarding) first.
 ## Fitting the window
 
 Rows fit the window they are shown in, so moving the cursor along a row
-never scrolls the view sideways. Columns whose cells are short keep their
-width and the title takes the rest. When the window is too narrow for
-every cell, the columns give way in this order: the tags collapse to `…`
-(the row still has tags), the type shows as one letter (`T` for Task, `S`
-for User Story: the first letter of the name's last word), then the
-assignee shortens to 8 columns. The title never gets fewer than 20
-columns, so in a window narrower than about 60 columns a row with long
-cells runs past it.
+never scrolls the view sideways. The ID column is never cut and takes its
+width first. Columns whose cells are short keep their width and the title
+takes the rest. When the window is too narrow for every cell, the columns
+give way in this order: the tags collapse to `…` (the row still has tags),
+the type shows as one letter (`T` for Task, `S` for User Story: the first
+letter of the name's last word), then the assignee shortens to 8 columns.
+The title never gets fewer than 20 columns, so in a window narrower than
+about 65 columns (with 6-digit IDs) a row with long cells runs past it.
 
 A cell longer than its column is cut in the buffer and ends in `…`. The
 plugin keeps the full value, and the save sends full values only:

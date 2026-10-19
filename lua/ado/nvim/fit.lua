@@ -15,6 +15,7 @@ local ux_stats = require("ado.nvim.ux_stats")
 local M = {}
 
 local COLUMNS = table_layout.LAYOUTS.full.columns
+local INDENT_CELL = table_layout.LAYOUTS.full.indent
 
 -- The state dot before each state cell is 2 columns of inline virtual text
 -- (nvim/decorations.lua). Neovim scrolls a window sideways by every column
@@ -87,7 +88,7 @@ local function loaded_value(reg, kind, column)
   local row = reg.row
   if kind == "field" then return row.kind == "field" and (row.value or "") or nil end
   if row.kind ~= "item" then return nil end
-  return row[column] or ""
+  return lines.value(row, column)
 end
 
 local function is_self(reg)
@@ -120,10 +121,10 @@ function M.cells(line)
   if not ranges then return nil end
   local out = { row_id = id, reg = reg, kind = "table", offset = offset, body = body, ranges = ranges, cells = {} }
   for i, r in ipairs(ranges) do
-    -- Ranges exclude the spaces around a cell, except the first cell's
+    -- Ranges exclude the spaces around a cell, except the type cell's
     -- indent.
     local text, indent = body:sub(r.first, r.last), ""
-    if i == 1 then
+    if i == INDENT_CELL then
       indent = text:match("^%s*")
       text = text:sub(#indent + 1)
     end
@@ -193,7 +194,7 @@ end
 -- The widths of table rows for text_width: rows = { { values, indent } },
 -- prefix = the widest row ID prefix. Returns the core budget.
 local function layout_for(text_width, prefix, rows)
-  local natural = { type = 0, letters = 0, state = 0, title = 0, assignee = 0, tags = 0 }
+  local natural = { id = 0, type = 0, letters = 0, state = 0, title = 0, assignee = 0, tags = 0 }
   for _, r in ipairs(rows) do
     local indent = r.indent or ""
     for _, c in ipairs(COLUMNS) do
@@ -208,8 +209,10 @@ local function layout_for(text_width, prefix, rows)
   return table_layout.budget(text_width - prefix - RESERVE, natural, DOT)
 end
 
--- What a table cell shows for value at the layout's widths.
+-- What a table cell shows for value at the layout's widths. An ID is
+-- never cut.
 local function shown_text(column, value, indent, b)
+  if column == "id" then return value end
   if column == "type" then
     if b.letters then return value ~= "" and letter_of(value) or "" end
     return table_layout.cut(value, b.widths.type - #indent, lines.measure)
@@ -219,6 +222,7 @@ end
 
 -- The width a field line's value or the item's own title may take.
 local function single_width(text_width, prefix, kind, column)
+  if kind == "field" and column == "id" then return math.huge end
   local w = text_width - prefix - RESERVE
   if kind == "field" then w = w - FIELD_LABEL - (column == "state" and DOT or 0) end
   return math.max(w, table_layout.MIN_TITLE)
@@ -231,7 +235,7 @@ local function render(buf, rows, ids, text_width)
   for _, r in ipairs(rows) do
     if r.kind == "item" and r.slot ~= "self" then
       local values = {}
-      for _, c in ipairs(COLUMNS) do values[c] = r[c] or "" end
+      for _, c in ipairs(COLUMNS) do values[c] = lines.value(r, c) end
       table.insert(table_rows, { values = values, indent = string.rep("  ", r.depth or 0) })
     end
   end
@@ -243,10 +247,10 @@ local function render(buf, rows, ids, text_width)
     if r.kind == "item" and r.slot ~= "self" then
       local indent = string.rep("  ", r.depth or 0)
       for _, c in ipairs(COLUMNS) do
-        local value = r[c] or ""
+        local value = lines.value(r, c)
         local shown, map = core.remember(map_of(reg, c), shown_text(c, value, indent, b), value, value)
         set_map(reg, c, map)
-        copy[c] = shown
+        copy[lines.key(c)] = shown
       end
     elseif r.kind == "item" or r.kind == "field" then
       local column = r.kind == "field" and r.field or "title"
@@ -259,10 +263,10 @@ local function render(buf, rows, ids, text_width)
     end
     shown_rows[i] = copy
   end
-  local w = b.widths
-  local text, prefixes = lines.render(shown_rows, ids, { w.type, w.state, w.title, w.assignee, w.tags }, true)
+  local widths = table_layout.ordered(b.widths)
+  local text, prefixes = lines.render(shown_rows, ids, widths, true)
   ux_stats.record("fit", (vim.uv.hrtime() - started) / 1e6, { rows = #rows })
-  return text, prefixes, { w.type, w.state, w.title, w.assignee, w.tags }
+  return text, prefixes, widths
 end
 
 -- Renders core rows for buf at its window's text width, cutting long
@@ -385,14 +389,13 @@ function M.plan(buf, all, user)
       if c.kind == "table" then
         local values = {}
         for _, cell in ipairs(c.cells) do values[cell.column] = c.values[cell.column] or cell.text end
-        table.insert(table_rows, { values = values, indent = c.cells[1].indent })
+        table.insert(table_rows, { values = values, indent = c.cells[INDENT_CELL].indent })
       end
     end
   end
   local text_width = M.text_width(buf)
   local b = layout_for(text_width, prefix, table_rows)
-  local w = b.widths
-  local widths = { w.type, w.state, w.title, w.assignee, w.tags }
+  local widths = table_layout.ordered(b.widths)
   local todo, after = {}, {}
   for _, c in ipairs(read) do
     local replace, changed = {}, false

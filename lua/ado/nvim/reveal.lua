@@ -23,7 +23,7 @@ local function full_value(line, column)
     if a == column then
       local reg = r.row_id and registry.get(r.row_id)
       if not reg then return nil end
-      return reg.row.kind == "field" and reg.row.value or reg.row[column], true
+      return reg.row.kind == "field" and reg.row.value or require("ado.nvim.lines").value(reg.row, column), true
     end
   end
   return r.values[column], false
