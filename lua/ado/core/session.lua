@@ -1,4 +1,4 @@
--- One session per editor: the transport, org, the projects lists cover, and
+-- One session per editor: the gateway, org, the projects lists cover, and
 -- a type catalog per project. Presentation code calls the core through these
 -- methods; every callback is cb(err, result).
 local area_path = require("ado.core.area_path")
@@ -7,7 +7,7 @@ local people = require("ado.core.people")
 local query = require("ado.core.query")
 local query_view = require("ado.core.query_view")
 local requests = require("ado.core.requests")
-local transport = require("ado.core.transport")
+local gateway = require("ado.core.gateway")
 local types = require("ado.core.types")
 local workitem = require("ado.core.workitem")
 
@@ -29,7 +29,7 @@ local function check_projects(projects)
   end
 end
 
--- opts: transport (required), org, projects ({ { name, types }... }, the
+-- opts: gateway (required), org, projects ({ { name, types }... }, the
 -- projects lists cover) or, when projects is nil, project (the one project,
 -- nil until chosen), query_top, open_categories (default
 -- types.DEFAULT_OPEN_CATEGORIES), default_types (the types of new lines,
@@ -38,11 +38,11 @@ end
 -- project's configured types name types its catalog lacks,
 -- { kind = "unknown_types", project, unknown = { name... }, valid = { name... } }).
 function M.new(opts)
-  transport.validate(opts.transport)
+  gateway.validate(opts.gateway)
   local projects = opts.projects or nil
   check_projects(projects)
   return setmetatable({
-    transport = opts.transport,
+    gateway = opts.gateway,
     org = opts.org,
     projects = projects,
     project = opts.project,
@@ -85,7 +85,7 @@ function Session:normalise(raw)
 end
 
 function Session:list_projects(cb)
-  self.transport.list_projects({}, cb)
+  self.gateway.list_projects({}, cb)
 end
 
 -- az boards query has no --top, so the result is capped here at query_top.
@@ -96,7 +96,7 @@ end
 function Session:query(spec, cb)
   local params = query.request(spec)
   params.project = self:default_project()
-  self.transport.query(params, function(err, raws)
+  self.gateway.query(params, function(err, raws)
     if err then return cb(err) end
     raws = raws or {}
     local items = {}
@@ -111,7 +111,7 @@ end
 -- The direct sub-areas of an area path (field form), as
 -- { { name, path (field form), has_children }... }.
 function Session:area_children(path, cb)
-  self.transport.area_children({ project = area_path.project(path), path = area_path.to_node(path) },
+  self.gateway.area_children({ project = area_path.project(path), path = area_path.to_node(path) },
     function(err, nodes)
       if err then return cb(err) end
       local out = {}
@@ -123,7 +123,7 @@ function Session:area_children(path, cb)
 end
 
 function Session:get(id, cb)
-  self.transport.get_work_item({ id = id }, function(err, raw)
+  self.gateway.get_work_item({ id = id }, function(err, raw)
     if err then return cb(err) end
     cb(nil, self:normalise(raw))
   end)
@@ -132,7 +132,7 @@ end
 -- The item with item.relations = workitem.relations(raw): its parent,
 -- children and other work item links.
 function Session:get_with_relations(id, cb)
-  self.transport.get_work_item({ id = id, relations = true }, function(err, raw)
+  self.gateway.get_work_item({ id = id, relations = true }, function(err, raw)
     if err then return cb(err) end
     local item = self:normalise(raw)
     item.relations = workitem.relations(raw)
@@ -143,10 +143,10 @@ end
 -- cb(nil) when ADO still holds the rev `item` was loaded at, else a
 -- "conflict" error: the revision guard (RFC 0001 R5.14).
 function Session:check_rev(item, cb)
-  self.transport.get_work_item({ id = item.id }, function(err, raw)
+  self.gateway.get_work_item({ id = item.id }, function(err, raw)
     if err then return cb(err) end
     if raw.rev ~= item.rev then
-      return cb(transport.error("conflict",
+      return cb(gateway.error("conflict",
         string.format("#%s changed remotely (rev %s -> %s)", item.id, tostring(item.rev), tostring(raw.rev)),
         { expected_rev = item.rev, actual_rev = raw.rev }))
     end
@@ -166,7 +166,7 @@ function Session:update_if_unchanged(item, changes, cb)
       -- ADO's message: "Test Operation for path /rev failed, value 2 was
       -- not equal to test value 1."
       local actual = tonumber(tostring(err.message):match("value (%d+) was not equal"))
-      return cb(transport.error("conflict", string.format("#%s changed remotely (rev %s -> %s)",
+      return cb(gateway.error("conflict", string.format("#%s changed remotely (rev %s -> %s)",
         item.id, tostring(item.rev), actual and tostring(actual) or "?"),
         { expected_rev = item.rev, actual_rev = actual }))
     end
@@ -176,7 +176,7 @@ end
 
 -- Sends a JSON Patch (core/requests.lua) to item `id` as one write.
 function Session:patch(id, patch, cb)
-  self.transport.patch_work_item({ id = id, patch = patch }, function(err, raw)
+  self.gateway.patch_work_item({ id = id, patch = patch }, function(err, raw)
     if err then return cb(err) end
     cb(nil, self:normalise(raw))
   end)
@@ -186,7 +186,7 @@ end
 -- name) | nil, parent | nil }, sent as one write; the project is the
 -- area's. ADO gives the item its type's initial state.
 function Session:create(fields, cb)
-  self.transport.create_work_item({ project = area_path.project(fields.area), type = fields.type,
+  self.gateway.create_work_item({ project = area_path.project(fields.area), type = fields.type,
     patch = requests.create_patch(fields, self.org) }, function(err, raw)
     if err then return cb(err) end
     cb(nil, self:normalise(raw))
@@ -197,7 +197,7 @@ end
 -- { { display_name, unique_name, mail, id }... }. opts.quiet: the caller
 -- reports a failure itself, so the presentation layer's notifier skips it.
 function Session:resolve_identity(text, cb, opts)
-  self.transport.resolve_identity({ text = text, quiet = opts and opts.quiet or nil }, cb)
+  self.gateway.resolve_identity({ text = text, quiet = opts and opts.quiet or nil }, cb)
 end
 
 -- The session's people search (core/people.lua), made on first use, so
@@ -212,11 +212,11 @@ end
 -- buffer reports a failed page in its footer line (RFC 0003 C4.7).
 -- cb(err, { comments = { raw... }, total, token }).
 function Session:list_comments(id, project, token, top, cb)
-  self.transport.list_comments({ id = id, project = project, top = top, token = token, quiet = true }, cb)
+  self.gateway.list_comments({ id = id, project = project, top = top, token = token, quiet = true }, cb)
 end
 
 function Session:add_comment(id, text, cb)
-  self.transport.add_comment({ id = id, text = text }, function(err, raw)
+  self.gateway.add_comment({ id = id, text = text }, function(err, raw)
     if err then return cb(err) end
     cb(nil, self:normalise(raw))
   end)
@@ -240,7 +240,7 @@ end
 -- of starting another. A failed load is not cached, so the next call retries.
 function Session:catalog(project, cb)
   if not project then
-    return cb(transport.error("invalid", "a project is required to load work item types"))
+    return cb(gateway.error("invalid", "a project is required to load work item types"))
   end
   local entry = self.catalogs[project]
   -- A cache hit calls back before catalog() returns.
@@ -251,7 +251,7 @@ function Session:catalog(project, cb)
   end
   entry = { waiters = { cb } }
   self.catalogs[project] = entry
-  types.load(self.transport, project, self.open_categories, function(err, catalog, info)
+  types.load(self.gateway, project, self.open_categories, function(err, catalog, info)
     local waiters = entry.waiters
     if err then
       self.catalogs[project] = nil
@@ -281,7 +281,7 @@ end
 function Session:catalogs_for_projects(cb)
   local names = self:project_names()
   if #names == 0 then
-    return cb(transport.error("invalid", "a project is required to load work item types"))
+    return cb(gateway.error("invalid", "a project is required to load work item types"))
   end
   local out = {}
   local function next_project(i)
@@ -316,7 +316,7 @@ function Session:states(wtype, project, cb)
     if err then return cb(err) end
     local names = catalog:states(wtype)
     if not names then
-      return cb(transport.error("not_found", string.format(
+      return cb(gateway.error("not_found", string.format(
         "work item type %s is not in the catalog of project %s", tostring(wtype), tostring(project))))
     end
     cb(nil, names)

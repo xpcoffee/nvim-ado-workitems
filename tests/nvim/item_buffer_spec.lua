@@ -1,4 +1,4 @@
--- The item buffer of RFC 0003 phase 1 on the fake transport: the details
+-- The item buffer of RFC 0003 phase 1 on the fake gateway: the details
 -- below the `── Details` row, the read-only guard, the description staged
 -- for :w, and adding a comment.
 local views = require("tests.support.views")

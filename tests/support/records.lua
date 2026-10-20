@@ -1,10 +1,10 @@
 -- View records for core plan tests, built as the presentation layer builds
 -- them (nvim/view_buffer.lua record): snapshot rows with row IDs and lines
--- from a view the core loaded through the fake transport, and current rows
+-- from a view the core loaded through the fake gateway, and current rows
 -- parsed back from those lines. Helpers edit the current rows the way a
 -- user edits the buffer: delete a line, paste a line yanked from another
 -- view, or type a new line. Vim-free, so core specs can load it.
-local Fake = require("tests.support.fake_transport")
+local Fake = require("tests.support.fake_gateway")
 local area_view = require("ado.core.area_view")
 local item_view = require("ado.core.item_view")
 local location = require("ado.core.location")
@@ -25,7 +25,7 @@ for _, t in ipairs(seed.types) do table.insert(M.SEED_TYPES, t.name) end
 function M.new(opts)
   opts = opts or {}
   local fake = Fake.new(opts.seed or seed)
-  local sopts = { transport = fake, org = "test-org", project = "P" }
+  local sopts = { gateway = fake, org = "test-org", project = "P" }
   if opts.projects == nil and opts.project == nil then
     sopts.projects = { { name = "P", types = M.SEED_TYPES } }
   end

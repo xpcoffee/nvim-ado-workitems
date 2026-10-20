@@ -1,15 +1,15 @@
--- The transport contract: the asynchronous operations through which the core
+-- The gateway contract: the asynchronous operations through which the core
 -- reaches Azure DevOps (ADO). The presentation layer supplies the az CLI
--- transport (nvim/az.lua); tests supply tests/support/fake_transport.lua.
+-- gateway (nvim/az.lua); tests supply tests/support/fake_gateway.lua.
 --
--- Every operation is transport.<op>(params, cb). params is always a table ({}
+-- Every operation is gateway.<op>(params, cb). params is always a table ({}
 -- when an operation takes none); any params may also carry quiet = true,
--- which transports ignore and which tells a wrapper that notifies failures
+-- which gateways ignore and which tells a wrapper that notifies failures
 -- (nvim/session.lua) that the caller reports them. cb(err, result) runs
 -- exactly once. It may
 -- run synchronously or later, so callers must not rely on code after the call
 -- running before the callback: the fake in its default sync mode calls back
--- before returning, and only the az transport guarantees delivery on the
+-- before returning, and only the az gateway guarantees delivery on the
 -- Neovim main loop. err is nil on success, else
 -- { kind = <one of KINDS>, message = string }. Results are ADO REST shapes
 -- ({ id, rev, fields, relations }); core/workitem.lua normalises them.
@@ -54,22 +54,22 @@ M.WRITES = {
 M.KINDS = { auth = true, not_found = true, conflict = true, invalid = true, failed = true }
 
 function M.error(kind, message, extra)
-  assert(M.KINDS[kind], "unknown transport error kind: " .. tostring(kind))
+  assert(M.KINDS[kind], "unknown gateway error kind: " .. tostring(kind))
   local err = { kind = kind, message = message }
   for k, v in pairs(extra or {}) do err[k] = v end
   return err
 end
 
--- Raises when an operation is missing, so a bad transport fails at session
+-- Raises when an operation is missing, so a bad gateway fails at session
 -- creation instead of on first use.
 function M.validate(t)
-  if type(t) ~= "table" then error("transport must be a table", 2) end
+  if type(t) ~= "table" then error("gateway must be a table", 2) end
   local missing = {}
   for _, op in ipairs(M.OPERATIONS) do
     if type(t[op]) ~= "function" then table.insert(missing, op) end
   end
   if #missing > 0 then
-    error("transport is missing operations: " .. table.concat(missing, ", "), 2)
+    error("gateway is missing operations: " .. table.concat(missing, ", "), 2)
   end
   return t
 end

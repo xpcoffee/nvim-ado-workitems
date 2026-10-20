@@ -1,7 +1,7 @@
 -- Configured projects (owner decision 2026-10-12, RFC 0002 R1.8 and R1.9):
 -- lists cover only the configured projects, and each item is judged open by
 -- its own project's type catalog.
-local Fake = require("tests.support.fake_transport")
+local Fake = require("tests.support.fake_gateway")
 local query = require("ado.core.query")
 local seed = require("tests.fixtures.seed")
 local session = require("ado.core.session")
@@ -32,7 +32,7 @@ end
 
 local function new(opts)
   local fake = Fake.new(data())
-  opts.transport = fake
+  opts.gateway = fake
   opts.org = "test-org"
   return session.new(opts), fake
 end
@@ -106,7 +106,7 @@ end)
 
 test("configured types the catalog lacks are reported once per session, without failing the load", function()
   local events = {}
-  local s = session.new({ transport = Fake.new(data()), org = "test-org",
+  local s = session.new({ gateway = Fake.new(data()), org = "test-org",
     projects = { { name = "P", types = { "task", "Epik", "Bug", "Storey" } }, { name = "Q", types = { "Bug" } } },
     on_event = function(e) table.insert(events, e) end })
   local loaded

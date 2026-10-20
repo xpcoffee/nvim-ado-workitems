@@ -1,8 +1,8 @@
--- The query list (RFC 0001 R9) on the fake transport: its location, the
+-- The query list (RFC 0001 R9) on the fake gateway: its location, the
 -- rows "mine" lists under each filter, the calls a load costs, and the
 -- browser URL. Seed items assigned to me: 100, 101, 103 and 112 are open;
 -- 107 (Done), 113 (a Resolved User Story) and 114 (Discarded) are not.
-local Fake = require("tests.support.fake_transport")
+local Fake = require("tests.support.fake_gateway")
 local location = require("ado.core.location")
 local query_view = require("ado.core.query_view")
 local seed = require("tests.fixtures.seed")
@@ -13,7 +13,7 @@ local wiql = require("ado.core.wiql")
 local function new(opts)
   local fake = Fake.new(seed)
   opts = opts or {}
-  opts.transport, opts.org, opts.project = fake, "test-org", "P"
+  opts.gateway, opts.org, opts.project = fake, "test-org", "P"
   return session.new(opts), fake
 end
 
@@ -97,7 +97,7 @@ end)
 
 test("without a project the load fails before any call", function()
   local fake = Fake.new(seed)
-  local s = session.new({ transport = fake, org = "test-org" })
+  local s = session.new({ gateway = fake, org = "test-org" })
   local _, err = load(s, location.query("mine"))
   eq(err.kind, "invalid")
   eq(#fake.calls, 0)

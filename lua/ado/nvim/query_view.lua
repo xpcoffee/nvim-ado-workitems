@@ -71,7 +71,7 @@ function M.load(buf, opts)
     if not vim.api.nvim_buf_is_valid(buf) or state[buf] ~= entry then return done_cb(nil) end
     view_buffer.set_editable(buf, true)
     if err then
-      -- Transport errors are already reported by nvim/session.lua; the
+      -- Gateway errors are already reported by nvim/session.lua; the
       -- core's own (no project) is not.
       if err.kind == "invalid" then notify(err.message, vim.log.levels.WARN) end
       view_buffer.set_winbar(buf, winbar(loc), "load failed, <leader>wr retries")

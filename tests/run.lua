@@ -20,7 +20,7 @@ local seed = tonumber(os.getenv("ADO_TEST_SEED") or "") or os.time()
 local only = os.getenv("ADO_TEST_ONLY") or ""
 
 -- No test may reach `az`, pandoc or the network. These are replaced for the
--- whole run, so a spec that exercises the az transport injects `system`.
+-- whole run, so a spec that exercises the az gateway injects `system`.
 local function forbid(name)
   return function()
     error("tests must not start processes: " .. name .. " was called", 2)

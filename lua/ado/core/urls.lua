@@ -1,4 +1,4 @@
--- Browser URLs for ADO's web UI. Building one needs no transport call.
+-- Browser URLs for ADO's web UI. Building one needs no gateway call.
 local M = {}
 
 -- Measured 2026-10-12 against dev.azure.com: a query URL of 3,053

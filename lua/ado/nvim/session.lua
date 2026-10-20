@@ -3,7 +3,7 @@
 local config = require("ado.config")
 local core_session = require("ado.core.session")
 local progress = require("ado.nvim.progress")
-local transport = require("ado.core.transport")
+local gateway = require("ado.core.gateway")
 local write_guard = require("ado.core.write_guard")
 
 local M = {}
@@ -31,7 +31,7 @@ local function on_event(event)
   end
 end
 
--- Every transport failure is reported once here, so call sites only decide
+-- Every gateway failure is reported once here, so call sites only decide
 -- what to do next, except while errors are muted or the call is quiet. A
 -- conflict is left to the caller, which knows the rev it expected and how
 -- the user can recover.
@@ -49,22 +49,22 @@ local function notify_errors(t)
       end
     end
   end
-  return transport.validate(wrapped)
+  return gateway.validate(wrapped)
 end
 
 function M.get()
   if not current then
     local c = config.get()
-    if not c.transport and (type(c.org) ~= "string" or c.org == "") then
+    if not c.gateway and (type(c.org) ~= "string" or c.org == "") then
       error('[ado] no organisation configured: set org in require("ado").setup(), or $ADO_ORG', 0)
     end
-    local t = c.transport or require("ado.nvim.az").new({ org = c.org })
-    -- Order: transport, write guard, notifier, so refusals are notified and
+    local t = c.gateway or require("ado.nvim.az").new({ org = c.org })
+    -- Order: gateway, write guard, notifier, so refusals are notified and
     -- the guard sees raw errors. Callers of core Session methods must not
-    -- notify transport errors again. See docs/architecture.md.
+    -- notify gateway errors again. See docs/architecture.md.
     if c.write_guard ~= false then t = write_guard.wrap(t, c.write_guard or {}) end
     current = core_session.new({
-      transport = notify_errors(t),
+      gateway = notify_errors(t),
       org = c.org,
       projects = c.projects,
       project = c.project,
@@ -78,7 +78,7 @@ function M.get()
 end
 
 -- A save reports its failure in its own report, so it mutes the
--- notifications of transport failures while it applies; calls pair
+-- notifications of gateway failures while it applies; calls pair
 -- mute_errors(true) with mute_errors(false).
 function M.mute_errors(on)
   muted = math.max(0, muted + (on and 1 or -1))

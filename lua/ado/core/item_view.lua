@@ -25,7 +25,7 @@
 -- row below which the item buffer shows the details and comments as plain
 -- text, never as rows.
 local location = require("ado.core.location")
-local transport = require("ado.core.transport")
+local gateway = require("ado.core.gateway")
 local workitem = require("ado.core.workitem")
 
 local M = {}
@@ -270,7 +270,7 @@ end
 -- info = { total = n } counts its children in every state.
 function M.expand(session, display, row, cb)
   if not M.expandable(row) then
-    return cb(transport.error("invalid", "only child rows expand"))
+    return cb(gateway.error("invalid", "only child rows expand"))
   end
   session:query(M.children_spec(row.id), function(err, items)
     if err then return cb(err) end

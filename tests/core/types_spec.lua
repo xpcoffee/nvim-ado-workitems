@@ -1,4 +1,4 @@
-local Fake = require("tests.support.fake_transport")
+local Fake = require("tests.support.fake_gateway")
 local query = require("ado.core.query")
 local seed = require("tests.fixtures.seed")
 local session = require("ado.core.session")
@@ -22,7 +22,7 @@ end
 local function new(opts, data)
   local fake = Fake.new(data or seed)
   opts = opts or {}
-  opts.transport = fake
+  opts.gateway = fake
   opts.org = "test-org"
   opts.project = opts.project or "P"
   return session.new(opts), fake
@@ -119,7 +119,7 @@ end)
 
 test("without a project the catalog load is invalid and makes 0 calls", function()
   local fake = Fake.new(seed)
-  local s = session.new({ transport = fake, org = "o" })
+  local s = session.new({ gateway = fake, org = "o" })
   s:catalog(nil, function(err) eq(err.kind, "invalid") end)
   s:my_items(function(err) eq(err.kind, "invalid") end)
   eq(#fake.calls, 0)
@@ -168,7 +168,7 @@ test("is_open and states ignore case; unknown types are not open", function()
   eq(c:names(), { "Task", "User Story", "Bug", "Issue" })
 end)
 
-test("UX2.6 the catalog keeps each type's and state's ADO colour, read through the transport", function()
+test("UX2.6 the catalog keeps each type's and state's ADO colour, read through the gateway", function()
   local fake = Fake.new(seed)
   local catalog
   types.load(fake, "P", nil, function(err, c)
@@ -225,7 +225,7 @@ end)
 test("open condition with no open state matches nothing", function()
   local c = types.new({ { name = "T", states = { { name = "Done", category = "Completed" } } } })
   local s = new()
-  s.transport.query(query.request({ select = { "System.Id" }, where = c:open_condition() }),
+  s.gateway.query(query.request({ select = { "System.Id" }, where = c:open_condition() }),
     function(_, items) eq(items, {}) end)
 end)
 
@@ -238,7 +238,7 @@ test("state and type names with quotes are escaped", function()
 end)
 
 -- Assumption 6 in the plan: ADO caps WIQL at 32,000 characters; the az
--- transport warns from 16,000.
+-- gateway warns from 16,000.
 test("open condition length for the seed stays far below the WIQL limit", function()
   local w = wiql.render(query.my_items(types.new(seed.types):open_condition()))
   ok(#w < 1000, "my items WIQL is " .. #w .. " characters")
@@ -258,6 +258,6 @@ test("types with the same open states share one clause", function()
     { id = 1, type = "Bug", title = "a", state = "New", area = "P\\Team", assignee = "me@example.com" },
     { id = 2, type = "Bug", title = "b", state = "Active", area = "P\\Team", assignee = "me@example.com" },
   }))
-  s.transport.query(query.request({ select = { "System.Id" }, where = c:open_condition() }),
+  s.gateway.query(query.request({ select = { "System.Id" }, where = c:open_condition() }),
     function(_, items) eq(#items, 1) eq(items[1].id, 1) end)
 end)

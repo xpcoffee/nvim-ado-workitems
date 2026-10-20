@@ -1,10 +1,10 @@
--- The az transport builds the same argv as lua/ado/client.lua did before the
--- transport split. No process starts: vim.system is replaced per test.
+-- The az gateway builds the same argv as lua/ado/client.lua, the az client it
+-- replaced. No process starts: vim.system is replaced per test.
 local az = require("ado.nvim.az")
 
 local URL = "https://dev.azure.com/o"
 
-local function transport(response)
+local function gateway(response)
   response = response or {}
   local argvs = {}
   local t = az.new({
@@ -30,7 +30,7 @@ local function call(t, op, params)
 end
 
 test("get_work_item runs work-item show", function()
-  local t, argvs = transport({ stdout = '{"id": 42, "rev": 3}' })
+  local t, argvs = gateway({ stdout = '{"id": 42, "rev": 3}' })
   local err, raw = call(t, "get_work_item", { id = 42 })
   eq(err, nil)
   eq(raw, { id = 42, rev = 3 })
@@ -38,20 +38,20 @@ test("get_work_item runs work-item show", function()
 end)
 
 test("query passes --project after --org and unwraps value", function()
-  local t, argvs = transport({ stdout = '{"value": [{"id": 1}]}' })
+  local t, argvs = gateway({ stdout = '{"value": [{"id": 1}]}' })
   local _, items = call(t, "query", { wiql = "SELECT 1", spec = {}, project = "P" })
   eq(items, { { id = 1 } })
   eq(argvs[1], { "az", "boards", "query", "--wiql", "SELECT 1", "--output", "json", "--org", URL, "--project", "P" })
 end)
 
-test("query with no results: az prints nothing, the transport returns an empty list", function()
-  local err, items = call(transport({ stdout = "" }), "query", { wiql = "W", spec = {}, project = "P" })
+test("query with no results: az prints nothing, the gateway returns an empty list", function()
+  local err, items = call(gateway({ stdout = "" }), "query", { wiql = "W", spec = {}, project = "P" })
   eq(err, nil)
   eq(items, {})
 end)
 
 test("query without a project omits --project", function()
-  local t, argvs = transport({ stdout = "[]" })
+  local t, argvs = gateway({ stdout = "[]" })
   local _, items = call(t, "query", { wiql = "W", spec = {} })
   eq(items, {})
   eq(argvs[1], { "az", "boards", "query", "--wiql", "W", "--output", "json", "--org", URL })
@@ -62,21 +62,21 @@ local PATCH_HEAD = { "az", "rest", "--method", "patch", "--url", URL .. "/_apis/
   "--body" }
 
 test("add_comment runs update --discussion", function()
-  local t, argvs = transport()
+  local t, argvs = gateway()
   call(t, "add_comment", { id = 7, text = "hi there" })
   eq(argvs[1], { "az", "boards", "work-item", "update", "--id", "7", "--discussion", "hi there",
     "--output", "json", "--org", URL })
 end)
 
 test("list_projects returns project names", function()
-  local t, argvs = transport({ stdout = '{"value": [{"name": "P"}, {"name": "Q"}]}' })
+  local t, argvs = gateway({ stdout = '{"value": [{"name": "P"}, {"name": "Q"}]}' })
   local _, names = call(t, "list_projects", {})
   eq(names, { "P", "Q" })
   eq(argvs[1], { "az", "devops", "project", "list", "--output", "json", "--org", URL })
 end)
 
 test("work_item_type_states runs devops invoke and returns the state list", function()
-  local t, argvs = transport({ stdout = '{"value": [{"name": "To Do", "category": "Proposed"}]}' })
+  local t, argvs = gateway({ stdout = '{"value": [{"name": "To Do", "category": "Proposed"}]}' })
   local _, states = call(t, "work_item_type_states", { type = "Task", project = "P" })
   eq(states, { { name = "To Do", category = "Proposed" } })
   eq(argvs[1], { "az", "devops", "invoke", "--area", "wit", "--resource", "workitemtypestates",
@@ -85,26 +85,26 @@ test("work_item_type_states runs devops invoke and returns the state list", func
 end)
 
 test("a login failure becomes an auth error with the actionable message", function()
-  local t = transport({ code = 1, stderr = "ERROR: Please run 'az login' to setup account." })
+  local t = gateway({ code = 1, stderr = "ERROR: Please run 'az login' to setup account." })
   local err = call(t, "get_work_item", { id = 1 })
   eq(err, { kind = "auth", message = "auth expired - run `az login` (then `az devops login` if prompted)" })
 end)
 
 test("other failures keep stderr, and bad JSON and a missing az are reported", function()
-  local err = call(transport({ code = 1, stderr = "TF401232: Work item 1 does not exist" }), "get_work_item", { id = 1 })
+  local err = call(gateway({ code = 1, stderr = "TF401232: Work item 1 does not exist" }), "get_work_item", { id = 1 })
   eq(err, { kind = "failed", message = "TF401232: Work item 1 does not exist" })
-  err = call(transport({ code = 1, stderr = "" }), "get_work_item", { id = 1 })
+  err = call(gateway({ code = 1, stderr = "" }), "get_work_item", { id = 1 })
   eq(err.message, "az command failed")
-  err = call(transport({ stdout = "not json" }), "get_work_item", { id = 1 })
+  err = call(gateway({ stdout = "not json" }), "get_work_item", { id = 1 })
   eq(err.message, "failed to parse az output")
-  local t, argvs = transport({ missing = true })
+  local t, argvs = gateway({ missing = true })
   err = call(t, "get_work_item", { id = 1 })
   eq(err.message, "az CLI not found")
   eq(#argvs, 0)
 end)
 
 test("work_item_types runs devops invoke with the trimming projection", function()
-  local t, argvs = transport({ stdout = '[{"name": "Bug", "isDisabled": false, "states": []}]' })
+  local t, argvs = gateway({ stdout = '[{"name": "Bug", "isDisabled": false, "states": []}]' })
   local _, list = call(t, "work_item_types", { project = "P" })
   eq(list, { { name = "Bug", isDisabled = false, states = {} } })
   eq(argvs[1], { "az", "devops", "invoke", "--area", "wit", "--resource", "workitemtypes",
@@ -133,7 +133,7 @@ test("the recorded types response builds a catalog with the real open states", f
   local types = require("ado.core.types")
   local query = require("ado.core.query")
   local wiql = require("ado.core.wiql")
-  local _, list = call(transport({ stdout = read("work_item_types.json") }), "work_item_types", { project = "P" })
+  local _, list = call(gateway({ stdout = read("work_item_types.json") }), "work_item_types", { project = "P" })
   eq(#list, 23)
   for _, wt in ipairs(list) do
     for _, s in ipairs(wt.states) do ok(s.category, wt.name .. " " .. s.name .. " has a category") end
@@ -156,7 +156,7 @@ test("the recorded types response builds a catalog with the real open states", f
 end)
 
 test("the recorded per-type states response keeps categories", function()
-  local _, states = call(transport({ stdout = read("work_item_type_states_task.json") }),
+  local _, states = call(gateway({ stdout = read("work_item_type_states_task.json") }),
     "work_item_type_states", { type = "Task", project = "P" })
   eq(states[4], { name = "Removed", category = "Removed", color = "ffffff" })
 end)
@@ -165,7 +165,7 @@ test("a query over the warning length is sent and reported in :messages", functi
   local notes = {}
   local notify = vim.notify
   vim.notify = function(msg, level) table.insert(notes, { msg = msg, level = level }) end
-  local t, argvs = transport({ stdout = "[]" })
+  local t, argvs = gateway({ stdout = "[]" })
   call(t, "query", { wiql = string.rep("x", 16001), spec = {} })
   vim.notify = notify
   eq(#argvs, 1)
@@ -173,7 +173,7 @@ test("a query over the warning length is sent and reported in :messages", functi
 end)
 
 test("area_children lists one level under the node path, from the recorded response", function()
-  local t, argvs = transport({ stdout = read("area_children_platform.json") })
+  local t, argvs = gateway({ stdout = read("area_children_platform.json") })
   local err, nodes = call(t, "area_children",
     { project = "Example", path = "\\Example\\Area\\Software\\Platform" })
   eq(err, nil)
@@ -181,13 +181,13 @@ test("area_children lists one level under the node path, from the recorded respo
     "--path", "\\Example\\Area\\Software\\Platform", "--depth", "1", "--output", "json", "--org", URL })
   eq(#nodes, 5)
   eq(nodes[5].path, "\\Example\\Area\\Software\\Platform\\Team A")
-  local _, leaf = call(transport({ stdout = read("area_children_leaf.json") }), "area_children",
+  local _, leaf = call(gateway({ stdout = read("area_children_leaf.json") }), "area_children",
     { project = "Example", path = nodes[5].path })
   eq(leaf, {}, "a leaf's children are null in the response")
 end)
 
 test("get_work_item with relations adds --expand relations", function()
-  local t, argvs = transport({ stdout = '{"id": 42, "rev": 3}' })
+  local t, argvs = gateway({ stdout = '{"id": 42, "rev": 3}' })
   call(t, "get_work_item", { id = 42, relations = true })
   eq(argvs[1], { "az", "boards", "work-item", "show", "--id", "42", "--expand", "relations",
     "--output", "json", "--org", URL })
@@ -197,7 +197,7 @@ end)
 -- responses from the phase 3 route check, with IDs and titles replaced.
 test("the recorded relations response parses to a parent and Related links, without the attachment", function()
   local workitem = require("ado.core.workitem")
-  local _, raw = call(transport({ stdout = read("work_item_show_relations.json") }), "get_work_item",
+  local _, raw = call(gateway({ stdout = read("work_item_show_relations.json") }), "get_work_item",
     { id = 1003, relations = true })
   eq(workitem.relations(raw), {
     parent = 1001,
@@ -211,7 +211,7 @@ end)
 
 test("the recorded children query normalises, with relations null", function()
   local workitem = require("ado.core.workitem")
-  local _, raws = call(transport({ stdout = read("query_children.json") }), "query", { wiql = "W", spec = {} })
+  local _, raws = call(gateway({ stdout = read("query_children.json") }), "query", { wiql = "W", spec = {} })
   eq(#raws, 3)
   local item = workitem.normalise(raws[2], "example-org")
   eq({ item.id, item.type, item.state }, { 1004, "Task", "New" })
@@ -219,7 +219,7 @@ test("the recorded children query normalises, with relations null", function()
 end)
 
 test("create_work_item posts the patch to the type's create URL, with the project and type encoded", function()
-  local t, argvs = transport({ stdout = read("work_item_create.json") })
+  local t, argvs = gateway({ stdout = read("work_item_create.json") })
   local patch = { { op = "add", path = "/fields/System.Title", value = "T" } }
   local err, raw = call(t, "create_work_item", { project = "My P", type = "User Story", patch = patch })
   eq(err, nil)
@@ -228,12 +228,12 @@ test("create_work_item posts the patch to the type's create URL, with the projec
   eq({ unpack(argv, 1, 6) }, { "az", "rest", "--method", "post", "--url",
     URL .. "/My%20P/_apis/wit/workitems/$User%20Story?api-version=7.1" })
   eq(vim.json.decode(argv[12]), patch)
-  local missing = call(transport(), "create_work_item", { type = "Task", patch = patch })
+  local missing = call(gateway(), "create_work_item", { type = "Task", patch = patch })
   eq(missing.kind, "invalid")
 end)
 
 test("resolve_identity searches the people picker through az rest and keeps active identities", function()
-  local t, argvs = transport({ stdout = read("identity_picker.json") })
+  local t, argvs = gateway({ stdout = read("identity_picker.json") })
   local err, found = call(t, "resolve_identity", { text = "tes" })
   eq(err, nil)
   eq(found, { { display_name = "Test User", unique_name = "test.user@example.com", mail = "test.user@example.com",
@@ -248,16 +248,16 @@ end)
 
 test("a failed test op is a conflict carrying ADO's message; other failures stay failures", function()
   local stderr = read("work_item_patch_test_failed.txt")
-  local err = call(transport({ code = 1, stderr = stderr }), "patch_work_item", { id = 7, patch = {} })
+  local err = call(gateway({ code = 1, stderr = stderr }), "patch_work_item", { id = 7, patch = {} })
   eq(err, { kind = "conflict",
     message = "VS403351: Test Operation for path /rev failed, value 2 was not equal to test value 1." })
-  err = call(transport({ code = 1, stderr = "ERROR: Bad Request(TF201036: one parent)" }), "patch_work_item",
+  err = call(gateway({ code = 1, stderr = "ERROR: Bad Request(TF201036: one parent)" }), "patch_work_item",
     { id = 7, patch = {} })
   eq(err, { kind = "failed", message = "ERROR: Bad Request(TF201036: one parent)" })
 end)
 
 test("patch_work_item sends the patch as given, in one az rest call", function()
-  local t, argvs = transport({ stdout = read("work_item_patch.json") })
+  local t, argvs = gateway({ stdout = read("work_item_patch.json") })
   local patch = { { op = "test", path = "/rev", value = 4 },
     { op = "add", path = "/fields/System.Title", value = "T" },
     { op = "test", path = "/relations/0/url", value = "https://dev.azure.com/o/_apis/wit/workItems/8" },
@@ -276,7 +276,7 @@ end)
 test("C7.1 list_comments calls the comments route with az rest, newest first, 5 a page, the token encoded once", function()
   local body = vim.json.encode({ totalCount = 8, count = 5, comments = { { id = 9 } },
     continuationToken = "2026-09-11T14:55:26.0930000Z" })
-  local t, argvs = transport({ stdout = body })
+  local t, argvs = gateway({ stdout = body })
   local err, page = call(t, "list_comments", { id = 42, project = "Example Team", top = 5,
     token = "2026-09-15T13:58:00.1000000Z" })
   eq(err, nil)
@@ -288,7 +288,7 @@ test("C7.1 list_comments calls the comments route with az rest, newest first, 5 
 end)
 
 test("list_comments: the last page has no token, and a project is required", function()
-  local t = transport({ stdout = '{"totalCount": 3, "comments": [], "continuationToken": null}' })
+  local t = gateway({ stdout = '{"totalCount": 3, "comments": [], "continuationToken": null}' })
   local err, page = call(t, "list_comments", { id = 1, project = "P" })
   eq(err, nil)
   eq(page.token, nil)

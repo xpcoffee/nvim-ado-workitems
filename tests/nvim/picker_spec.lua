@@ -1,7 +1,7 @@
--- The telescope search picker on the fake transport. Telescope is stubbed,
+-- The telescope search picker on the fake gateway. Telescope is stubbed,
 -- so the spec checks what the plugin hands it: titles, items and the <C-a>
 -- toggle. "My work items" is a query list (query_view_spec.lua).
-local Fake = require("tests.support.fake_transport")
+local Fake = require("tests.support.fake_gateway")
 local seed = require("tests.fixtures.seed")
 
 local opened
@@ -38,7 +38,7 @@ local function fresh(items)
   data.items = items or seed.items
   local fake = Fake.new(data)
   require("ado.config").reset()
-  require("ado.config").setup({ transport = fake, org = "test-org", project = "P", projects = false,
+  require("ado.config").setup({ gateway = fake, org = "test-org", project = "P", projects = false,
     write_guard = false })
   require("ado.nvim.session").reset()
   vim.notify = function() end

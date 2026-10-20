@@ -17,7 +17,7 @@ test-core:
 bench:
 	$(NVIM) --headless -u NONE -l tests/bench/views_bench.lua
 
-# The README's GIFs, from scripts/demo/*.tape on the fake transport; needs
+# The README's GIFs, from scripts/demo/*.tape on the fake gateway; needs
 # vhs, ttyd and ffmpeg on PATH. TAPES=scripts/demo/item.tape makes one.
 VHS ?= vhs
 TAPES ?= $(filter-out scripts/demo/settings.tape,$(wildcard scripts/demo/*.tape))

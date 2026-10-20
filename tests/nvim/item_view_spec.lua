@@ -1,4 +1,4 @@
--- The item buffer on the fake transport: rows, labels, navigation and
+-- The item buffer on the fake gateway: rows, labels, navigation and
 -- history, the all-states toggle, the K float, the area row, the entry
 -- points and the browser URL.
 local views = require("tests.support.views")

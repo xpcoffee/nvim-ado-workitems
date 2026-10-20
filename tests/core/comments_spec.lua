@@ -1,6 +1,6 @@
 -- Comment paging for an item buffer (RFC 0003 C4, C5, C7.2), on the fake
--- transport's pages.
-local Fake = require("tests.support.fake_transport")
+-- gateway's pages.
+local Fake = require("tests.support.fake_gateway")
 local comments = require("ado.core.comments")
 local seed = require("tests.fixtures.seed")
 local session = require("ado.core.session")
@@ -25,7 +25,7 @@ end
 
 local function new(list)
   local fake = Fake.new(with_comments(list))
-  return session.new({ transport = fake, org = "test-org", project = "P" }), fake
+  return session.new({ gateway = fake, org = "test-org", project = "P" }), fake
 end
 
 -- Starts a page and answers it from the session.
@@ -117,7 +117,7 @@ test("A17 a failed page keeps the shown comments, says why, and is not retried b
   local s, fake = new(numbered(8))
   local state = comments.new(8)
   page(s, state)
-  fake:fail_on("list_comments", 2, require("ado.core.transport").error("failed", "HTTP 503\nmore detail"))
+  fake:fail_on("list_comments", 2, require("ado.core.gateway").error("failed", "HTTP 503\nmore detail"))
   eq(page(s, state), "failed")
   eq(#state.comments, 5)
   eq(comments.footer(state), "── comments did not load: HTTP 503; <CR> retries")

@@ -1,4 +1,4 @@
--- The query list buffer on the fake transport (RFC 0001 R9): "my work
+-- The query list buffer on the fake gateway (RFC 0001 R9): "my work
 -- items" opens it in the top window, selecting a row opens the item as
 -- the area view does, the filters, reload, browser URL and toggle, and :w
 -- with a row cut from it.

@@ -61,7 +61,7 @@ that names it (see [The write guard](#the-write-guard)). Reads work without it.
 | `write_guard` | `{}` (no area: every write refused) | Limits writes; see [The write guard](#the-write-guard). `false` turns it off. |
 | `audit_log` | `stdpath("state")/ado-workitems/audit.log` | The file each saved work item's write is logged to, one JSON line each. |
 | `ui` | see [Colours](#colours) and [Fitting the window](#fitting-the-window) | `icons` (the state dot and the sign column's markers) and `type_letters` (the letter a type shows as in a narrow window). |
-| `transport` | the `az` transport | Replaces the transport; the test suite passes its fake transport here. |
+| `gateway` | the `az` gateway | Replaces the gateway, the table of operations through which the plugin reaches ADO; the test suite passes its fake gateway here. `transport`, its name before v0.9.0, still works and warns. |
 
 `setup()` merges each key you pass over the defaults, so a table value
 such as `write_guard` or `ui` replaces the default table whole.
@@ -459,7 +459,7 @@ the search in every state, and back.
 
 `make test` runs every spec headless (`make test NVIM=/path/to/nvim` to pick a
 binary); `make test-core` runs only the core suite. No test starts a process:
-specs run against the fake transport in [`tests/support/fake_transport.lua`](../tests/support/fake_transport.lua).
+specs run against the fake gateway in [`tests/support/fake_gateway.lua`](../tests/support/fake_gateway.lua).
 `make test ORDER=reverse` and `make test ORDER=shuffle` run the spec files in
 another order, which catches a spec that leaves state behind for the next;
 shuffle prints its seed, and `SEED=<n>` repeats that order. `make test
@@ -471,12 +471,12 @@ targets.
 Modules under `lua/ado/core/` hold behaviour and never touch `vim`; the
 runner loads their specs in a sandbox that raises on `vim` and scans the
 files for `vim.` as a backstop. Modules under `lua/ado/nvim/` own buffers,
-windows, keymaps and the `az` transport. [architecture.md](architecture.md) shows how the
-layers, the transport wrappers and the test sandbox fit together.
+windows, keymaps and the `az` gateway. [architecture.md](architecture.md) shows how the
+layers, the gateway wrappers and the test sandbox fit together.
 
 `make demo` records the README's GIFs again from `scripts/demo/*.tape` with
 [VHS](https://github.com/charmbracelet/vhs), which needs `vhs`, `ttyd` and
 `ffmpeg` on `PATH`; `make demo TAPES=scripts/demo/item.tape` records one.
 The tapes start Neovim with `scripts/demo/init.lua`, which runs the plugin
-on the fake transport with the invented data in `scripts/demo/seed.lua`,
+on the fake gateway with the invented data in `scripts/demo/seed.lua`,
 delays each answer as ADO would, and never calls `az`.

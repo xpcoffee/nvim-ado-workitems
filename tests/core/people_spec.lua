@@ -1,6 +1,6 @@
 -- People candidates and search for the assignee menu (plan 0002 UX6.1 to
--- UX6.4), against the fake transport.
-local Fake = require("tests.support.fake_transport")
+-- UX6.4), against the fake gateway.
+local Fake = require("tests.support.fake_gateway")
 local people = require("ado.core.people")
 local plan = require("ado.core.plan")
 local seed = require("tests.fixtures.seed")
@@ -8,7 +8,7 @@ local session = require("ado.core.session")
 
 local function new()
   local fake = Fake.new(seed)
-  local s = session.new({ transport = fake, org = "test-org", project = "P" })
+  local s = session.new({ gateway = fake, org = "test-org", project = "P" })
   return s:people(), fake, s
 end
 
@@ -141,7 +141,7 @@ test("UX6.5 each of the seed's two identities matching Alex, inserted as its ema
   end
 end)
 
-test("UX6.7 a quiet search passes quiet to the transport; a failure is not cached", function()
+test("UX6.7 a quiet search passes quiet to the gateway; a failure is not cached", function()
   local p, fake = new()
   fake:fail_on("resolve_identity", 1)
   local got

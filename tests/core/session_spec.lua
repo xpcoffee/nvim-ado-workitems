@@ -1,4 +1,4 @@
-local Fake = require("tests.support.fake_transport")
+local Fake = require("tests.support.fake_gateway")
 local query = require("ado.core.query")
 local seed = require("tests.fixtures.seed")
 local session = require("ado.core.session")
@@ -6,13 +6,13 @@ local session = require("ado.core.session")
 local function new(opts)
   local fake = Fake.new(seed)
   opts = opts or {}
-  opts.transport = fake
+  opts.gateway = fake
   opts.org = opts.org or "test-org"
   return session.new(opts), fake
 end
 
-test("new refuses an incomplete transport", function()
-  fails(function() session.new({ transport = {} }) end, "transport is missing operations")
+test("new refuses an incomplete gateway", function()
+  fails(function() session.new({ gateway = {} }) end, "gateway is missing operations")
 end)
 
 test("query sends WIQL, spec and project and returns normalised items", function()
@@ -134,7 +134,7 @@ test("states of a type missing from the catalog is not_found", function()
   s:states("Epic", nil, function(err) eq(err.kind, "not_found") end)
 end)
 
-test("a transport error reaches the caller unchanged", function()
+test("a gateway error reaches the caller unchanged", function()
   local s, fake = new()
   fake:fail_on("get_work_item", 1, { kind = "auth", message = "expired" })
   s:get(101, function(err, item)

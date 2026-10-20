@@ -1,7 +1,7 @@
 -- Helpers for the presentation specs of the views: a fresh editor, session
--- and layout on the fake transport per test, keys, and row lookup by text.
+-- and layout on the fake gateway per test, keys, and row lookup by text.
 -- Uses vim, so only tests/nvim specs load it.
-local Fake = require("tests.support.fake_transport")
+local Fake = require("tests.support.fake_gateway")
 local lines = require("ado.nvim.lines")
 local seed = require("tests.fixtures.seed")
 
@@ -26,7 +26,7 @@ function M.fresh(opts)
   local fake = Fake.new(opts.seed or seed)
   local types = {}
   for _, t in ipairs((opts.seed or seed).types) do table.insert(types, t.name) end
-  local c = { transport = fake, org = "test-org", project = "P", projects = { { name = "P", types = types } },
+  local c = { gateway = fake, org = "test-org", project = "P", projects = { { name = "P", types = types } },
     write_guard = false,
     area_paths = { "P/Team" }, area_filters = { state = "open" },
     link_types = { "System.LinkTypes.Hierarchy", "System.LinkTypes.Related" } }

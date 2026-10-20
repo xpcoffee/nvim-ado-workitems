@@ -36,8 +36,8 @@ local function defaults()
     -- File the audit log appends one JSON line to per saved change (RFC 0001
     -- R7.4); nil means stdpath("state") .. "/ado-workitems/audit.log".
     audit_log = nil,
-    -- Replaces the az transport; tests pass the fake transport here.
-    transport = nil,
+    -- Replaces the az gateway; tests pass the fake gateway here.
+    gateway = nil,
     -- The views' look (plan 0002). icons: the state dot and the sign
     -- column's markers for a changed and a new row, each one column wide,
     -- for example Nerd Font glyphs; a missing key keeps its default.
@@ -49,9 +49,27 @@ local function defaults()
 end
 
 local config = defaults()
+local warned_transport = false
+
+-- `transport` is the name gateway had before v0.9.0, kept as a deprecated
+-- alias; gateway wins when both are passed.
+local function rename_transport(opts)
+  if opts.transport == nil then return opts end
+  if not warned_transport then
+    warned_transport = true
+    local msg = opts.gateway ~= nil
+      and "[ado] setup(): `transport` is deprecated and ignored because `gateway` is also set; remove `transport`"
+      or "[ado] setup(): `transport` is deprecated; pass `gateway` instead"
+    vim.notify(msg, vim.log.levels.WARN)
+  end
+  opts = vim.tbl_extend("force", {}, opts)
+  if opts.gateway == nil then opts.gateway = opts.transport end
+  opts.transport = nil
+  return opts
+end
 
 function M.setup(opts)
-  config = vim.tbl_extend("force", config, opts or {})
+  config = vim.tbl_extend("force", config, rename_transport(opts or {}))
 end
 
 function M.get()
@@ -61,6 +79,7 @@ end
 -- Back to the defaults, so a later setup() starts from them.
 function M.reset()
   config = defaults()
+  warned_transport = false
 end
 
 return M

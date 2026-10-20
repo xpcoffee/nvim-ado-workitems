@@ -1,4 +1,4 @@
--- Fake ADO data for the fake transport. Starts from the oil spike's items
+-- Fake ADO data for the fake gateway. Starts from the oil spike's items
 -- (areas P\Team and A to D, duplicate titles, a slash in a title) and adds what
 -- later phases test: types with state categories, a state that is open for one
 -- type and finished for another (Resolved), Related links, two identities

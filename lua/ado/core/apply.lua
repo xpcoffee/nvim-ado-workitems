@@ -11,12 +11,12 @@
 -- were, so a link one request writes does not trip a later check. The
 -- first failure stops the run.
 local requests = require("ado.core.requests")
-local transport = require("ado.core.transport")
+local gateway = require("ado.core.gateway")
 
 local M = {}
 
 local function conflict(id, expected, actual)
-  return transport.error("conflict", string.format("#%s changed remotely (rev %s -> %s)", id, tostring(expected),
+  return gateway.error("conflict", string.format("#%s changed remotely (rev %s -> %s)", id, tostring(expected),
     tostring(actual)), { expected_rev = expected, actual_rev = actual })
 end
 
@@ -79,7 +79,7 @@ function M.run(session, plan, opts, cb)
       if not patch then return cb2(perr) end
       session:patch(req.id, patch, function(werr, written)
         if werr and werr.kind == "conflict" then
-          return cb2(transport.error("conflict", string.format(
+          return cb2(gateway.error("conflict", string.format(
             "#%d changed remotely after it was read at rev %s, so ADO wrote nothing to it (%s)",
             req.id, tostring(rev or item.rev), tostring(werr.message))))
         end

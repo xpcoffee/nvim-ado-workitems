@@ -1,14 +1,14 @@
--- Wraps a transport so that writes reach ADO only for items in one area path
+-- Wraps a gateway so that writes reach ADO only for items in one area path
 -- (and its sub-areas) and never for a denied type. Policy and defaults:
 -- docs/architecture.md#write-guard. Unrelated to the revision check, the
 -- test op on /rev that each patch starts with.
 --
--- A refused write never reaches the inner transport. Checks that need the
+-- A refused write never reaches the inner gateway. Checks that need the
 -- target's area and type read it with get_work_item first; the read and the
 -- write are not atomic, and a failed read refuses the write. A patch is
 -- checked whole: every op in it, every field it sets, and the item at the
 -- other end of every link it adds or removes.
-local transport = require("ado.core.transport")
+local gateway = require("ado.core.gateway")
 local workitem = require("ado.core.workitem")
 
 local M = {}
@@ -40,7 +40,7 @@ local function within(path, area)
 end
 
 local function refusal(op, reason)
-  return transport.error("invalid", "write guard refused " .. op .. ": " .. reason)
+  return gateway.error("invalid", "write guard refused " .. op .. ": " .. reason)
 end
 
 -- opts: area (required to allow any write), deny_types (default none),

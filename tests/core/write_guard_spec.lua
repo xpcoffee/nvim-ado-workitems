@@ -1,4 +1,4 @@
-local Fake = require("tests.support.fake_transport")
+local Fake = require("tests.support.fake_gateway")
 local seed = require("tests.fixtures.seed")
 local write_guard = require("ado.core.write_guard")
 local requests = require("ado.core.requests")
@@ -79,7 +79,7 @@ test("C7.1 list_comments is a read: it passes through unchanged, also on an Issu
   eq(#fake.writes, 0)
 end)
 
-test("a write inside the area reaches the transport", function()
+test("a write inside the area reaches the gateway", function()
   local g, fake = guarded()
   local err, raw = result_of(g, "patch_work_item", edit(101, { ["System.Title"] = "x" }))
   eq(err, nil)
@@ -105,7 +105,7 @@ test("a write to an Issue is refused with zero writes", function()
   eq(#fake.writes, 0)
 end)
 
-test("changing a type to Issue is refused with zero transport calls", function()
+test("changing a type to Issue is refused with zero gateway calls", function()
   local g, fake = guarded()
   local err = result_of(g, "patch_work_item", edit(101, { ["System.WorkItemType"] = "issue" }))
   ok(err.message:find("changing a type to issue", 1, true), err.message)
@@ -119,7 +119,7 @@ test("changing the type of an Issue is refused with zero writes", function()
   eq(#fake.writes, 0)
 end)
 
-test("a type change between allowed types inside the area reaches the transport", function()
+test("a type change between allowed types inside the area reaches the gateway", function()
   local g, fake = guarded()
   local err = result_of(g, "patch_work_item", edit(101, { ["System.WorkItemType"] = "User Story", ["System.State"] = "New" }))
   eq(err, nil)
@@ -138,7 +138,7 @@ test("assignee and tag updates get the same checks as any other field", function
   eq(#fake.writes, 3, "only the three updates to #101")
 end)
 
-test("moving an item out of the area is refused with zero transport calls", function()
+test("moving an item out of the area is refused with zero gateway calls", function()
   local g, fake = guarded()
   local err = result_of(g, "patch_work_item", edit(101, { ["System.AreaPath"] = "P\\Team\\B" }))
   ok(err.message:find("new area 'P\\Team\\B' is outside", 1, true), err.message)
@@ -302,13 +302,13 @@ test("works with deferred callbacks", function()
   eq(#fake.writes, 0)
 end)
 
--- Adding an operation to the transport without deciding how the guard treats
+-- Adding an operation to the gateway without deciding how the guard treats
 -- it would leave it refused for every caller.
-test("every transport operation is either a read or has a write check", function()
-  local transport = require("ado.core.transport")
+test("every gateway operation is either a read or has a write check", function()
+  local gateway = require("ado.core.gateway")
   local all = {}
-  for _, op in ipairs(transport.OPERATIONS) do all[op] = true end
-  for op in pairs(transport.WRITES) do all[op] = true end
+  for _, op in ipairs(gateway.OPERATIONS) do all[op] = true end
+  for op in pairs(gateway.WRITES) do all[op] = true end
   local stub = {}
   for op in pairs(all) do
     stub[op] = function(_, cb)

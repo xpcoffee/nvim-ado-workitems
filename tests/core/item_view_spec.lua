@@ -1,4 +1,4 @@
-local Fake = require("tests.support.fake_transport")
+local Fake = require("tests.support.fake_gateway")
 local area_view = require("ado.core.area_view")
 local history = require("ado.core.history")
 local item_view = require("ado.core.item_view")
@@ -47,7 +47,7 @@ local TREE = with({
 local function new(data, opts)
   local fake = Fake.new(data or TREE)
   opts = opts or {}
-  opts.transport = fake
+  opts.gateway = fake
   opts.org = "test-org"
   opts.project = "P"
   return session.new(opts), fake
@@ -248,7 +248,7 @@ test("the load works with deferred callbacks and reports its two steps", functio
   eq(steps, { { 1, 2, "item" }, { 2, 2, "links" } })
 end)
 
-test("a failed read fails the load once with the transport's error", function()
+test("a failed read fails the load once with the gateway's error", function()
   local s, fake = new()
   fake:fail_on("get_work_item", 1, { kind = "not_found", message = "no such item" })
   local calls = 0

@@ -293,7 +293,7 @@ test("A0001-23 in the views: a failure part way stops, reports, and reloads the 
   edit(a, "Fix login", "Fix the login")
   write(a)
   eq(env.fake.counts.patch_work_item, 2)
-  eq(#env.notes, 1, "the transport error is in the report, not a message of its own")
+  eq(#env.notes, 1, "the gateway error is in the report, not a message of its own")
   eq(last_note(env), "[ado] save stopped at #102: 1 of 3 work items saved, 1 not attempted; the report shows why")
   eq(env.reports, { { "Save stopped: 1 of 3 work items saved, 1 failed, 1 not attempted",
     "Completed", "  #101 title: 'Write API' -> 'Write the API'",

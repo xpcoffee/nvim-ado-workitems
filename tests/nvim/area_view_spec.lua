@@ -1,7 +1,7 @@
--- The area view buffer on the fake transport: rendering, navigation,
+-- The area view buffer on the fake gateway: rendering, navigation,
 -- filters, the sub-area toggle, :w and the browser URL. Selecting an item
 -- is in layout_spec.lua.
-local Fake = require("tests.support.fake_transport")
+local Fake = require("tests.support.fake_gateway")
 local seed = require("tests.fixtures.seed")
 local lines = require("ado.nvim.lines")
 
@@ -15,7 +15,7 @@ local function fresh(opts)
   vim.cmd("silent! only")
   vim.cmd("silent! %bwipeout!")
   local fake = Fake.new(seed)
-  local c = { transport = fake, org = "test-org", project = "P", projects = false, write_guard = false,
+  local c = { gateway = fake, org = "test-org", project = "P", projects = false, write_guard = false,
     area_paths = { "P/Team", "P\\Team\\B" }, area_filters = { state = "open" } }
   for k, v in pairs(opts or {}) do c[k] = v end
   require("ado.config").reset()

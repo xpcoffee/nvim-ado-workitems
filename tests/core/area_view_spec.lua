@@ -1,4 +1,4 @@
-local Fake = require("tests.support.fake_transport")
+local Fake = require("tests.support.fake_gateway")
 local area_view = require("ado.core.area_view")
 local location = require("ado.core.location")
 local seed = require("tests.fixtures.seed")
@@ -16,7 +16,7 @@ end
 local function new(data, opts)
   local fake = Fake.new(data or seed)
   opts = opts or {}
-  opts.transport = fake
+  opts.gateway = fake
   opts.org = "test-org"
   opts.project = "P"
   return session.new(opts), fake
@@ -175,7 +175,7 @@ test("more items than query_top set the truncated flag", function()
   eq(view.total, 3)
 end)
 
-test("a failed call fails the load once, with the transport's error", function()
+test("a failed call fails the load once, with the gateway's error", function()
   local s, fake = new(TEAM)
   fake:fail_on("area_children", 1, { kind = "failed", message = "no such area" })
   local calls = 0

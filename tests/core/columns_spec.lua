@@ -1,5 +1,5 @@
 -- The assignee, tags and type columns (RFC 0001 R5.17, R5.19 to R5.22),
--- planned from rows the core loaded through the fake transport, and
+-- planned from rows the core loaded through the fake gateway, and
 -- applied to the fake.
 --
 -- Seed: 101 (Task, To Do, P\Team\A) is assigned to Me Myself with tags

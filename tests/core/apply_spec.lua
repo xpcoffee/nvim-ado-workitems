@@ -1,7 +1,7 @@
 -- Applying a change plan: one write request per work item, the revision
 -- guard per item, partial failure, and one event per applied or failed
 -- request for the audit log.
-local Fake = require("tests.support.fake_transport")
+local Fake = require("tests.support.fake_gateway")
 local apply = require("ado.core.apply")
 local seed = require("tests.fixtures.seed")
 local session = require("ado.core.session")
@@ -10,7 +10,7 @@ local workitem = require("ado.core.workitem")
 
 local function new()
   local fake = Fake.new(seed)
-  return session.new({ transport = fake, org = "test-org", project = "P" }), fake
+  return session.new({ gateway = fake, org = "test-org", project = "P" }), fake
 end
 
 local function op(id, name, from, to)
@@ -180,7 +180,7 @@ test("every applied or failed request produces one audit event; not attempted on
   eq(events[1], { kind = "start", index = 1, total = 3, request = events[1].request })
 end)
 
-test("apply works when the transport calls back later", function()
+test("apply works when the gateway calls back later", function()
   local s, fake = new()
   fake.mode = "deferred"
   local result

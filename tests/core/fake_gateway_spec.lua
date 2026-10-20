@@ -1,4 +1,4 @@
-local Fake = require("tests.support.fake_transport")
+local Fake = require("tests.support.fake_gateway")
 local query = require("ado.core.query")
 local seed = require("tests.fixtures.seed")
 

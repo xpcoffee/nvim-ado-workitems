@@ -20,7 +20,7 @@ local function module_path(root, name)
   local rel = (name:gsub("%.", "/")) .. ".lua"
   if name:match("^ado%.core%.") then
     return root .. "/lua/" .. rel
-  -- Specs run in the same sandbox and load the fake transport and fixtures.
+  -- Specs run in the same sandbox and load the fake gateway and fixtures.
   elseif name:match("^tests%.") then
     return root .. "/" .. rel
   end
@@ -149,7 +149,7 @@ function M.helpers()
     return err
   end
 
-  -- For callback APIs on the fake transport: the test calls done() from its
+  -- For callback APIs on the fake gateway: the test calls done() from its
   -- final callback; flushing runs any deferred callbacks first.
   function h.async(fake, fn)
     local done = false

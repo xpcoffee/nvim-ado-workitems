@@ -1,11 +1,11 @@
 -- nvim/session.lua builds the session from config: the write guard and error
--- reporting wrap whichever transport config supplies.
-local Fake = require("tests.support.fake_transport")
+-- reporting wrap whichever gateway config supplies.
+local Fake = require("tests.support.fake_gateway")
 local seed = require("tests.fixtures.seed")
 
 local function fresh(opts)
   local fake = Fake.new(seed)
-  opts.transport = fake
+  opts.gateway = fake
   opts.org = "test-org"
   if opts.projects == nil then opts.projects = false end
   require("ado.config").reset()
@@ -48,7 +48,7 @@ test("with write_guard left unset, writes are refused and the message names the 
   ok(notes[1].msg:find("set write_guard = { area = ", 1, true), notes[1].msg)
 end)
 
-test("with no org and no transport, the session names the setup option", function()
+test("with no org and no gateway, the session names the setup option", function()
   require("ado.config").reset()
   require("ado.config").setup({ org = "" })
   local session = require("ado.nvim.session")
@@ -117,4 +117,49 @@ test("open_categories from setup reach the session", function()
   for _, it in ipairs(got) do table.insert(ids, it.id) end
   table.sort(ids)
   eq(ids, { 101, 103 })
+end)
+
+-- `transport` is the deprecated name for the gateway option (before v0.9.0).
+local function setup_with(opts)
+  local notes = {}
+  vim.notify = function(msg, level) table.insert(notes, { msg = msg, level = level }) end
+  local config = require("ado.config")
+  config.reset()
+  opts.org, opts.project, opts.projects, opts.write_guard = "test-org", "P", false, false
+  config.setup(opts)
+  local session = require("ado.nvim.session")
+  session.reset()
+  return session, notes, config
+end
+
+test("setup's deprecated transport key still supplies the gateway, with one warning naming gateway", function()
+  local fake = Fake.new(seed)
+  local session, notes, config = setup_with({ transport = fake })
+  config.setup({ transport = fake })
+  session.get():get(101, function() end)
+  eq(fake.counts.get_work_item, 1)
+  eq(config.get().transport, nil)
+  eq(#notes, 1)
+  eq(notes[1].level, vim.log.levels.WARN)
+  ok(notes[1].msg:find("`transport` is deprecated; pass `gateway` instead", 1, true), notes[1].msg)
+  session.reset()
+end)
+
+test("when setup gets both gateway and transport, gateway wins and transport is warned about", function()
+  local gateway, old = Fake.new(seed), Fake.new(seed)
+  local session, notes = setup_with({ gateway = gateway, transport = old })
+  session.get():get(101, function() end)
+  eq(gateway.counts.get_work_item, 1)
+  eq(old.counts.get_work_item, nil)
+  eq(#notes, 1)
+  eq(notes[1].level, vim.log.levels.WARN)
+  ok(notes[1].msg:find("`transport` is deprecated and ignored because `gateway` is also set", 1, true), notes[1].msg)
+  session.reset()
+end)
+
+test("setup with only gateway gives no deprecation warning", function()
+  local session, notes = setup_with({ gateway = Fake.new(seed) })
+  session.get():get(101, function() end)
+  eq(notes, {})
+  session.reset()
 end)

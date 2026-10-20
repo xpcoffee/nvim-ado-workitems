@@ -1,5 +1,5 @@
--- In-memory stand-in for ADO that implements the transport contract in
--- lua/ado/core/transport.lua. Plain Lua, so it loads inside the sandbox.
+-- An in-memory fake of ADO that implements the gateway contract in
+-- lua/ado/core/gateway.lua. Plain Lua, so it loads inside the sandbox.
 --
 --   local fake = Fake.new(require("tests.fixtures.seed"))
 --   fake.calls            every call, in order: { op, params }
@@ -28,7 +28,7 @@
 --
 -- A seed item's project is s.project, else seed.projects[1]. A project's
 -- types are seed.project_types[name], else seed.types.
-local transport = require("ado.core.transport")
+local gateway = require("ado.core.gateway")
 local workitem = require("ado.core.workitem")
 
 local Fake = {}
@@ -122,7 +122,7 @@ function Fake.new(seed)
     types_omit_categories = false,
     next_id = 1000,
   }, Fake)
-  for _, op in ipairs(transport.OPERATIONS) do
+  for _, op in ipairs(gateway.OPERATIONS) do
     local handler = Fake["op_" .. op]
     self[op] = function(params, cb) self:dispatch(op, handler, params or {}, cb) end
   end
@@ -131,7 +131,7 @@ end
 
 function Fake:fail_on(op, n, err)
   self.failures[op] = self.failures[op] or {}
-  self.failures[op][n] = err or transport.error("failed", "fake failure on " .. op)
+  self.failures[op][n] = err or gateway.error("failed", "fake failure on " .. op)
 end
 
 function Fake:edit_remotely(id, fields)
@@ -150,7 +150,7 @@ function Fake:dispatch(op, handler, params, cb)
   self.counts[op] = (self.counts[op] or 0) + 1
   local record = { op = op, params = copy(params) }
   table.insert(self.calls, record)
-  if transport.WRITES[op] then table.insert(self.writes, record) end
+  if gateway.WRITES[op] then table.insert(self.writes, record) end
 
   local err, result
   local planned = self.failures[op] and self.failures[op][self.counts[op]]
@@ -168,7 +168,7 @@ function Fake:dispatch(op, handler, params, cb)
 end
 
 local function not_found(id)
-  return transport.error("not_found", "work item " .. tostring(id) .. " does not exist")
+  return gateway.error("not_found", "work item " .. tostring(id) .. " does not exist")
 end
 
 -- ── query evaluation ─────────────────────────────────────────────────────────
@@ -247,7 +247,7 @@ function Fake:matches(it, cond)
     end
     return false
   end
-  error("fake transport: unsupported query operator " .. tostring(cond.op))
+  error("fake gateway: unsupported query operator " .. tostring(cond.op))
 end
 
 -- ── operations ───────────────────────────────────────────────────────────────
@@ -258,7 +258,7 @@ end
 
 -- Like az boards query: only the SELECT fields, and no _links or relations.
 function Fake:op_query(params)
-  local spec = assert(params.spec, "fake transport: query needs a spec")
+  local spec = assert(params.spec, "fake gateway: query needs a spec")
   local hits = {}
   for _, it in pairs(self.items) do
     if self:matches(it, spec.where) then table.insert(hits, it) end
@@ -299,7 +299,7 @@ end
 function Fake:op_list_comments(params)
   local it = self.items[params.id]
   if not it then return not_found(params.id) end
-  if not params.project then return transport.error("invalid", "a project is required to list comments") end
+  if not params.project then return gateway.error("invalid", "a project is required to list comments") end
   local all = {}
   for _, c in ipairs(it.comments or {}) do if not c.isDeleted then table.insert(all, c) end end
   table.sort(all, function(a, b)
@@ -331,7 +331,7 @@ function Fake:identity_value(unique_name)
       return nil, { displayName = x.display_name, uniqueName = x.unique_name }
     end
   end
-  return transport.error("failed", "unknown identity " .. tostring(unique_name))
+  return gateway.error("failed", "unknown identity " .. tostring(unique_name))
 end
 
 -- ADO's message when a patch's test op fails (checked 2026-10-12).
@@ -341,7 +341,7 @@ function Fake:check_state(fields)
   for _, t in ipairs(self:types_of(fields["System.TeamProject"])) do
     if t.name == fields["System.WorkItemType"] then
       for _, st in ipairs(t.states) do if st.name == fields["System.State"] then return nil end end
-      return transport.error("failed", string.format(
+      return gateway.error("failed", string.format(
         "The field 'State' contains the value '%s' that is not in the list of supported values",
         tostring(fields["System.State"])))
     end
@@ -396,7 +396,7 @@ function Fake:link(it, rel, target)
   if find_relation(it, rel, other.url) then return nil end
   local child = rel == workitem.PARENT and it or rel == workitem.CHILD and other or nil
   if child and child.fields["System.Parent"] then
-    return transport.error("failed", string.format(
+    return gateway.error("failed", string.format(
       "TF201036: You cannot add a Parent link between work items %d and %d because a work item can have only one Parent link.",
       child.id, child == it and other.id or it.id))
   end
@@ -409,7 +409,7 @@ end
 function Fake:unlink(it, index)
   local r = it.relations[index + 1]
   if not r then
-    return transport.error("failed", string.format("#%d has no relation at index %d", it.id, index))
+    return gateway.error("failed", string.format("#%d has no relation at index %d", it.id, index))
   end
   table.remove(it.relations, index + 1)
   local other = self.items[workitem.relation_target(r)]
@@ -433,24 +433,24 @@ function Fake:apply_patch(id, patch, creating)
     local tested = type(p.path) == "string" and p.path:match("^/relations/(%d+)/url$")
     if p.op == "test" and p.path == "/rev" and not creating then
       if p.value ~= it.rev then
-        return transport.error("conflict", "VS403351: " .. TEST_FAILED:format(p.path, it.rev, tostring(p.value)))
+        return gateway.error("conflict", "VS403351: " .. TEST_FAILED:format(p.path, it.rev, tostring(p.value)))
       end
     elseif p.op == "test" and tested and not creating then
       local r = it.relations[tonumber(tested) + 1]
       if not r or r.url ~= p.value then
-        return transport.error("conflict", TEST_FAILED:format(p.path, r and r.url or "null", tostring(p.value)))
+        return gateway.error("conflict", TEST_FAILED:format(p.path, r and r.url or "null", tostring(p.value)))
       end
     elseif ref and (p.op == "add" or p.op == "replace") then
       err = self:set_field(it.fields, ref, p.value, p.op)
       fields_changed = true
     elseif p.path == "/relations/-" and p.op == "add" then
       local target = type(p.value) == "table" and workitem.relation_target(p.value)
-      if not target then return transport.error("invalid", "fake transport: relation needs a work item url") end
+      if not target then return gateway.error("invalid", "fake gateway: relation needs a work item url") end
       err = self:link(it, p.value.rel, target)
     elseif index and p.op == "remove" and not creating then
       err = self:unlink(it, tonumber(index))
     else
-      return transport.error("invalid", string.format("fake transport: unsupported patch op %s %s",
+      return gateway.error("invalid", string.format("fake gateway: unsupported patch op %s %s",
         tostring(p.op), tostring(p.path)))
     end
     if err then return err end
@@ -478,7 +478,7 @@ function Fake:op_create_work_item(params)
     if t.name == params.type then initial = t.states[1].name end
   end
   if not initial then
-    return transport.error("invalid", "work item type " .. tostring(params.type) .. " does not exist")
+    return gateway.error("invalid", "work item type " .. tostring(params.type) .. " does not exist")
   end
   local before = copy(self.items)
   local id = self.next_id
@@ -541,7 +541,7 @@ function Fake:op_area_children(params)
     end
   end
   if not found then
-    return transport.error("failed", "area path " .. tostring(params.path) .. " does not exist")
+    return gateway.error("failed", "area path " .. tostring(params.path) .. " does not exist")
   end
   for _, n in ipairs(nodes) do
     n.hasChildren = false
@@ -573,7 +573,7 @@ function Fake:op_work_item_type_states(params)
   for _, t in ipairs(self:types_of(params.project)) do
     if t.name == params.type then return nil, copy(t.states) end
   end
-  return transport.error("not_found", "work item type " .. tostring(params.type) .. " does not exist")
+  return gateway.error("not_found", "work item type " .. tostring(params.type) .. " does not exist")
 end
 
 return Fake

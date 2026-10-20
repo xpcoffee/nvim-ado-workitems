@@ -1,4 +1,4 @@
--- Comments in the item buffer (RFC 0003 section 9) on the fake transport:
+-- Comments in the item buffer (RFC 0003 section 9) on the fake gateway:
 -- paging by the trigger rule, one page in flight, stale responses, the
 -- footer's states, undo and the modified flag, reloads and history.
 local views = require("tests.support.views")
@@ -210,7 +210,7 @@ test("A17 a failed page keeps the comments, says why once, and only <CR> on the 
   local notify = vim.notify
   local messages = {}
   vim.notify = function(msg, level) table.insert(messages, msg) notify(msg, level) end
-  env.fake:fail_on("list_comments", 2, require("ado.core.transport").error("failed", "HTTP 503"))
+  env.fake:fail_on("list_comments", 2, require("ado.core.gateway").error("failed", "HTTP 503"))
   local buf = open(20)
   move(vim.api.nvim_buf_line_count(buf))
   vim.notify = notify

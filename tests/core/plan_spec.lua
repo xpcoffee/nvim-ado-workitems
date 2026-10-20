@@ -1,5 +1,5 @@
 -- The change plan for column edits (title and state) and its summary,
--- planned from rows the core loaded through the fake transport. Structural
+-- planned from rows the core loaded through the fake gateway. Structural
 -- edits are in structure_spec.lua.
 local plan = require("ado.core.plan")
 local records = require("tests.support.records")
@@ -208,7 +208,7 @@ test("restating the current state in another case is no change, listed with its 
   eq(texts(lines), { "Nothing to save", "No change", "  #101 state 'to do' is its current state, To Do" })
 end)
 
-test("a rejected plan makes 0 transport calls while computing", function()
+test("a rejected plan makes 0 gateway calls while computing", function()
   local s, fake = new()
   local v = area(s, "P\\Team\\A")
   item_line(v, 101).state = "Bogus"

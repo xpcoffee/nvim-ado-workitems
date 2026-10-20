@@ -11,7 +11,7 @@
 --          (core/workitem.lua row)
 local location = require("ado.core.location")
 local query = require("ado.core.query")
-local transport = require("ado.core.transport")
+local gateway = require("ado.core.gateway")
 local urls = require("ado.core.urls")
 local wiql = require("ado.core.wiql")
 local workitem = require("ado.core.workitem")
@@ -54,7 +54,7 @@ function M.load(session, loc, opts, cb)
   local progress = opts.on_progress or function() end
   local projects = session:project_names()
   if #projects == 0 then
-    return cb(transport.error("invalid", "a project is required to list work items"))
+    return cb(gateway.error("invalid", "a project is required to list work items"))
   end
   local view = { location = loc, projects = projects }
   local function run(catalogs)
@@ -104,7 +104,7 @@ function M.browser_url(org, view)
     { select = BROWSER_FIELDS, open_types = open_types })
   local url = urls.query(org, view.projects[1], wiql.render(spec))
   if #url > urls.MAX_QUERY_URL then
-    return nil, transport.error("invalid", string.format(
+    return nil, gateway.error("invalid", string.format(
       "the browser query URL is %d characters; ADO's web UI rejects more than about %d",
       #url, urls.MAX_QUERY_URL), { length = #url })
   end

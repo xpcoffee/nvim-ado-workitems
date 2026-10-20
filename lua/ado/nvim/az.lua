@@ -1,9 +1,9 @@
--- The az CLI transport (see core/transport.lua for the contract). The only
+-- The az CLI gateway (see core/gateway.lua for the contract). The only
 -- module that shells out to `az`. All calls are async via vim.system;
 -- callbacks are scheduled onto the main loop so callers may touch the nvim API
 -- freely. Org (and project where required) are threaded per call; we never
 -- mutate the user's global `az devops configure` defaults.
-local transport = require("ado.core.transport")
+local gateway = require("ado.core.gateway")
 local urls = require("ado.core.urls")
 
 local M = {}
@@ -13,9 +13,9 @@ local function stderr_error(stderr)
   local s = (stderr or ""):lower()
   if s:find("az login") or s:find("run the login command")
       or s:find("refresh token") or s:find("aadsts") then
-    return transport.error("auth", "auth expired - run `az login` (then `az devops login` if prompted)")
+    return gateway.error("auth", "auth expired - run `az login` (then `az devops login` if prompted)")
   end
-  return transport.error("failed", (stderr ~= nil and stderr ~= "") and stderr or "az command failed")
+  return gateway.error("failed", (stderr ~= nil and stderr ~= "") and stderr or "az command failed")
 end
 
 -- A patch whose test op fails gets HTTP 412 with this type and writes
@@ -76,7 +76,7 @@ function M.new(opts)
   -- empty: the result when az prints nothing.
   local function exec(argv, cb, empty)
     if not executable() then
-      finish(cb, transport.error("failed", "az CLI not found"))
+      finish(cb, gateway.error("failed", "az CLI not found"))
       return
     end
     system(argv, { text = true }, function(res)
@@ -90,7 +90,7 @@ function M.new(opts)
       end
       local ok, decoded = pcall(vim.json.decode, res.stdout or "")
       if not ok then
-        finish(cb, transport.error("failed", "failed to parse az output"))
+        finish(cb, gateway.error("failed", "failed to parse az output"))
         return
       end
       finish(cb, nil, decoded)
@@ -159,14 +159,14 @@ function M.new(opts)
   function t.patch_work_item(params, cb)
     rest_patch("patch", item_url(params.id), params.patch, function(err, raw)
       local failed_test = err and test_failure(err.message)
-      if failed_test then return cb(transport.error("conflict", failed_test)) end
+      if failed_test then return cb(gateway.error("conflict", failed_test)) end
       cb(err, raw)
     end)
   end
 
   function t.create_work_item(params, cb)
     if not params.project then
-      finish(cb, transport.error("invalid", "a project is required to create a work item"))
+      finish(cb, gateway.error("invalid", "a project is required to create a work item"))
       return
     end
     rest_patch("post", string.format("%s/%s/_apis/wit/workitems/$%s?api-version=%s", base_url,
@@ -183,7 +183,7 @@ function M.new(opts)
   -- token (a timestamp) is encoded once.
   function t.list_comments(params, cb)
     if not params.project or params.project == "" then
-      finish(cb, transport.error("invalid", "a project is required to list comments"))
+      finish(cb, gateway.error("invalid", "a project is required to list comments"))
       return
     end
     local url = string.format("%s/%s/_apis/wit/workItems/%d/comments?api-version=%s&$top=%d&order=desc",
@@ -192,7 +192,7 @@ function M.new(opts)
     exec({ "az", "rest", "--method", "get", "--url", url, "--resource", ADO_RESOURCE, "--output", "json" },
       function(err, data)
         if err then return cb(err) end
-        if type(data) ~= "table" then return cb(transport.error("failed", "unexpected comments response")) end
+        if type(data) ~= "table" then return cb(gateway.error("failed", "unexpected comments response")) end
         local token = data.continuationToken
         cb(nil, { comments = type(data.comments) == "table" and data.comments or {},
           total = tonumber(data.totalCount), token = type(token) == "string" and token ~= "" and token or nil })
@@ -201,7 +201,7 @@ function M.new(opts)
 
   function t.work_item_types(params, cb)
     if not params.project then
-      finish(cb, transport.error("invalid", "a project is required to list work item types"))
+      finish(cb, gateway.error("invalid", "a project is required to list work item types"))
       return
     end
     run({ "az", "devops", "invoke",
@@ -216,7 +216,7 @@ function M.new(opts)
 
   function t.work_item_type_states(params, cb)
     if not params.project then
-      finish(cb, transport.error("invalid", "a project is required to list states"))
+      finish(cb, gateway.error("invalid", "a project is required to list states"))
       return
     end
     run({ "az", "devops", "invoke",

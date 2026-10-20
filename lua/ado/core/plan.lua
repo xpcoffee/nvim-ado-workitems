@@ -378,7 +378,7 @@ local function assignee_texts(views)
   return out
 end
 
--- Loads what compute() needs, so compute() makes no transport call:
+-- Loads what compute() needs, so compute() makes no gateway call:
 --   catalogs = { [project] = catalog }   state checks (R5.7), and the types
 --              a rejection lists when a project has no configured types
 --   types    = { [project] = { name... } } the configured types (R5.21)
@@ -497,7 +497,7 @@ local function link_key(a, rel, b)
   return a .. " " .. rel .. " " .. b
 end
 
--- prepared: from M.prepare. Makes no transport calls, so a rejected plan
+-- prepared: from M.prepare. Makes no gateway calls, so a rejected plan
 -- has made no writes.
 function M.compute(views, prepared)
   prepared = prepared or {}

@@ -6,7 +6,7 @@
 -- WIQL has no state-category condition, and one state name can be open for one
 -- type and finished for another (a Bug's `Resolved` can be finished while an
 -- Epic's is in progress), so the open condition is built per type.
-local transport = require("ado.core.transport")
+local gateway = require("ado.core.gateway")
 
 local M = {}
 
@@ -145,12 +145,12 @@ local function missing_categories(t)
   return false
 end
 
--- Loads the catalog through the transport: one work_item_types call, plus one
+-- Loads the catalog through the gateway: one work_item_types call, plus one
 -- work_item_type_states call for each type listed without state categories.
 -- cb(err, catalog, info), info = { calls = n, fallback = { type name... } }.
 function M.load(t, project, open_categories, cb)
   if not project then
-    return cb(transport.error("invalid", "a project is required to load work item types"))
+    return cb(gateway.error("invalid", "a project is required to load work item types"))
   end
   local info = { calls = 1, fallback = {} }
   t.work_item_types({ project = project }, function(err, list)
@@ -172,7 +172,7 @@ function M.load(t, project, open_categories, cb)
         if serr then return cb(serr) end
         for _, s in ipairs(states or {}) do
           if s.category == nil then
-            return cb(transport.error("failed", string.format(
+            return cb(gateway.error("failed", string.format(
               "state '%s' of type %s has no state category", tostring(s.name), wt.name)))
           end
         end

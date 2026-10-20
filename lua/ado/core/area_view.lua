@@ -9,7 +9,7 @@
 local area_path = require("ado.core.area_path")
 local location = require("ado.core.location")
 local query = require("ado.core.query")
-local transport = require("ado.core.transport")
+local gateway = require("ado.core.gateway")
 local urls = require("ado.core.urls")
 local wiql = require("ado.core.wiql")
 local workitem = require("ado.core.workitem")
@@ -131,7 +131,7 @@ function M.browser_url(org, view)
   local spec = M.spec(view.location, view.catalog, { select = BROWSER_FIELDS, open_types = open_types })
   local url = urls.query(org, area_path.project(view.location.path), wiql.render(spec))
   if #url > urls.MAX_QUERY_URL then
-    return nil, transport.error("invalid", string.format(
+    return nil, gateway.error("invalid", string.format(
       "the browser query URL is %d characters; ADO's web UI rejects more than about %d",
       #url, urls.MAX_QUERY_URL), { length = #url })
   end

@@ -1,5 +1,5 @@
--- Structured query specs. A spec is data, so the az transport can send it as
--- WIQL (core/wiql.lua) and the fake transport can evaluate it directly.
+-- Structured query specs. A spec is data, so the az gateway can send it as
+-- WIQL (core/wiql.lua) and the fake gateway can evaluate it directly.
 --
 --   spec  = { select = { ref... }, where = cond, order_by = { { field = ref, desc = bool }... } }
 --   cond  = { field = ref, op = "=" | "<>" | "<" | "CONTAINS WORDS", value = v }
@@ -112,7 +112,7 @@ function M.text_search(text, scope)
   }
 end
 
--- The transport's query params: both forms, rendered from one spec.
+-- The gateway's query params: both forms, rendered from one spec.
 function M.request(spec)
   return { wiql = wiql.render(spec), spec = spec }
 end

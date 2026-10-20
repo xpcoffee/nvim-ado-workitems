@@ -3,7 +3,7 @@
 -- each create as one POST with its fields and parent. ADO applies a request
 -- whole or not at all, so rules and alerts in ADO never see an item half
 -- changed. Policy and order: docs/architecture.md#saving-views.
-local transport = require("ado.core.transport")
+local gateway = require("ado.core.gateway")
 local urls = require("ado.core.urls")
 local workitem = require("ado.core.workitem")
 
@@ -98,7 +98,7 @@ function M.patch(req, raw, org, rev)
   end
   local function missing(rel, target)
     local name = rel == workitem.PARENT and "parent" or (rel:match("([^.]+)$") .. " link to")
-    return transport.error("conflict", string.format(
+    return gateway.error("conflict", string.format(
       "#%d no longer has %s #%d in ADO; it changed remotely", req.id, name, target))
   end
 
@@ -116,7 +116,7 @@ function M.patch(req, raw, org, rev)
     elseif op.kind == "add_link" then
       table.insert(additions, relation(org, op.rel, op.target))
     else
-      return nil, transport.error("invalid", "no request for op kind " .. tostring(op.kind))
+      return nil, gateway.error("invalid", "no request for op kind " .. tostring(op.kind))
     end
   end
   -- Highest index first, so each removal leaves the indices still to

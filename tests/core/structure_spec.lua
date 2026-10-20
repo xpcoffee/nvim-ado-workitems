@@ -1,6 +1,6 @@
 -- Structural edits (RFC 0001 R5 table, R5.4 to R5.12, R5.18): deleting,
 -- pasting, moving and adding rows across views, planned from rows the core
--- loaded through the fake transport, and applied to the fake.
+-- loaded through the fake gateway, and applied to the fake.
 --
 -- Seed hierarchy: 100 (User Story, P\Team\A) has children 101 and 102,
 -- 102 has child 106, and 100 is Related to 105. 105 (User Story,
@@ -327,7 +327,7 @@ test("A0001-21 a row the state filter hid is not in the snapshot, so it cannot b
   eq(#fake.writes, 0)
 end)
 
-test("A0001-22 moving N under one of its own descendants is rejected before any transport call", function()
+test("A0001-22 moving N under one of its own descendants is rejected before any gateway call", function()
   local s, fake = new()
   local top, low = item(s, 100), item(s, 106)
   paste(low, cut(top, 102), heading(low, "children"))

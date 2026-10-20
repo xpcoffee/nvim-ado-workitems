@@ -1,7 +1,7 @@
 -- The change plan for an item buffer (RFC 0003): the read-only region and
 -- the boundary row (C2.1 to C2.3), and a staged description in the item's
 -- one patch (C3.3, C7.5).
-local Fake = require("tests.support.fake_transport")
+local Fake = require("tests.support.fake_gateway")
 local apply = require("ado.core.apply")
 local item_details = require("ado.core.item_details")
 local records = require("tests.support.records")

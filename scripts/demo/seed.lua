@@ -1,5 +1,5 @@
 -- Invented data for the README's demo recordings, in the seed shape the fake
--- transport reads (tests/support/fake_transport.lua). Every organisation,
+-- gateway reads (tests/support/fake_gateway.lua). Every organisation,
 -- area, person and item here is made up.
 local function html(...)
   return "<p>" .. table.concat({ ... }, "</p><p>") .. "</p>"

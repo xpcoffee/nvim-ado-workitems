@@ -5,43 +5,48 @@ write, and how the tests run the core without Neovim. This is the current
 view; the plan in `docs/plan/0001-implementation-plan.md` records how it got
 here.
 
+Terminology: before v0.9.0 the gateway was called the "transport", and the
+RFCs, plans and spikes under `docs/` still use that name. It is a gateway
+in the ports-and-adapters sense: the operation contract is the port, and the
+`az` gateway and the fake are its adapters.
+
 ## Layers
 
 The plugin has two layers. The **core** (`lua/ado/core/`) holds behaviour:
 work item normalisation, query building, the type catalog and the session.
 It never touches `vim`. The **presentation** layer (`lua/ado/nvim/`) owns
-buffers, windows, keymaps, notifications and the `az` CLI transport.
+buffers, windows, keymaps, notifications and the `az` CLI gateway.
 
-The core reaches ADO only through a **transport**: a table of asynchronous
-operations, `transport.<op>(params, cb)`, defined in
-`lua/ado/core/transport.lua`. Two transports implement it: the `az` transport
+The core reaches ADO only through a **gateway**: a table of asynchronous
+operations, `gateway.<op>(params, cb)`, defined in
+`lua/ado/core/gateway.lua`. Two gateways implement it: the `az` gateway
 (`lua/ado/nvim/az.lua`), which runs the `az` CLI, and the in-memory fake
-(`tests/support/fake_transport.lua`), which the tests use.
+(`tests/support/fake_gateway.lua`), which the tests use.
 
 `lua/ado/nvim/session.lua` builds the one session per editor. It wraps the
-transport twice before handing it to the core:
+gateway twice before handing it to the core:
 
 ```mermaid
 flowchart LR
   UI["presentation<br/>views, picker"] --> S["core session<br/>core/session.lua"]
   S --> N["error notifier<br/>nvim/session.lua"]
   N --> G["write guard (optional)<br/>core/write_guard.lua"]
-  G --> T{"transport"}
-  T -->|default| AZ["az transport<br/>nvim/az.lua"]
-  T -->|config.transport| F["fake transport<br/>tests/support"]
+  G --> T{"gateway"}
+  T -->|default| AZ["az gateway<br/>nvim/az.lua"]
+  T -->|config.gateway| F["fake gateway<br/>tests/support"]
   AZ --> ADO[("Azure DevOps")]
 ```
 
 The order matters. The error notifier sits outside the write guard, so a
 refused write is reported to the user like any other failure, and the guard
-sees the raw errors from the transport. Because the notifier reports every
-transport failure, code that calls core session methods must not notify the
+sees the raw errors from the gateway. Because the notifier reports every
+gateway failure, code that calls core session methods must not notify the
 same error again. Errors the core raises itself do not pass through the
-notifier, and neither does a `conflict` from the transport, so callers
+notifier, and neither does a `conflict` from the gateway, so callers
 report those: the caller knows which rev it expected and how the user can
 recover. While a save applies, `nvim/save.lua` mutes the notifier
 (`session.mute_errors`), because the save's report carries the error. A
-single call can also pass `quiet = true` in its params, which transports
+single call can also pass `quiet = true` in its params, which gateways
 ignore and the notifier honours: the assignee menu (`nvim/people.lua`)
 searches on every pause in typing, so it reports a failed search itself,
 once per Insert session, instead of once per search.
@@ -378,8 +383,8 @@ nothing.
 
 ### Comments paging
 
-Comments are read with `list_comments`, a read in the transport contract
-that the write guard passes unchanged. The `az` transport calls
+Comments are read with `list_comments`, a read in the gateway contract
+that the write guard passes unchanged. The `az` gateway calls
 `GET {org}/{project}/_apis/wit/workItems/{id}/comments?api-version=7.1-preview.4&$top=5&order=desc`
 with `az rest`, adding `&continuationToken=<token>`, URL-encoded once, for
 every page after the first. ADO's token is the created date of the next
@@ -565,7 +570,7 @@ A patch for an existing item holds, in this order:
 
 1. `{ op = "test", path = "/rev", value = <rev the plan was made from> }`.
    If the item changed after apply read it, ADO refuses the whole patch
-   with HTTP 412 and `VS403351`, which the transport reports as a
+   with HTTP 412 and `VS403351`, which the gateway reports as a
    `conflict`, and the report says "#N changed remotely after it was read
    at rev R, so ADO wrote nothing to it". This closes the read-then-write
    window of risk 2 in plan 0001.
@@ -675,7 +680,7 @@ since the load would replace the edits.
 - **Assignee (R5.19).** The text must name exactly one identity: one that
   equals a display name or email, else the only identity whose name or
   email starts with the text. None or several reject the save, naming the
-  row. An empty column unassigns. The `az` transport searches ADO's people
+  row. An empty column unassigns. The `az` gateway searches ADO's people
   picker with `az rest`, because `az devops invoke` cannot reach it. The
   assignee menu and `<leader>we` insert the person's email rather than
   the display name, so a person picked there always resolves to exactly
@@ -741,8 +746,8 @@ With the guard on:
 - With no `area` set, every write is refused, and the message names the
   `setup()` option to set.
 - An operation the guard has no rule for is refused, so an operation added to
-  the transport later is blocked until someone writes its rule.
-- A refusal never reaches the transport. The caller receives an error of kind
+  the gateway later is blocked until someone writes its rule.
+- A refusal never reaches the gateway. The caller receives an error of kind
   `invalid` whose message starts `write guard refused <operation>`.
 
 For a write to an existing item, the guard first reads the item with
@@ -765,12 +770,14 @@ The reads and the write are separate calls, not one atomic step: an item
 moved between them is not caught. If a read fails, the guard refuses the
 write.
 
-## The `transport` config option
+## The `gateway` config option
 
-`setup({ transport = t })` replaces the `az` transport with `t`, which must
-implement every operation in `transport.OPERATIONS`; the session raises at
+`setup({ gateway = t })` replaces the `az` gateway with `t`, which must
+implement every operation in `gateway.OPERATIONS`; the session raises at
 creation if one is missing. The presentation specs pass the fake here. The
-write guard and the error notifier wrap whichever transport is configured.
+write guard and the error notifier wrap whichever gateway is configured.
+`setup({ transport = t })`, the option's name before v0.9.0, still works
+and warns once per session; when both are passed, `gateway` wins.
 
 ## Test sandbox
 
@@ -779,7 +786,7 @@ write guard and the error notifier wrap whichever transport is configured.
 1. Replaces every process-starting function (`vim.system`, `vim.fn.system`,
    `vim.fn.jobstart`, `io.popen`, `os.execute` and others) with one that
    raises, so no test can reach `az` or the network. A spec that exercises the
-   `az` transport passes its own `system` function to `az.new`.
+   `az` gateway passes its own `system` function to `az.new`.
 2. Scans `lua/ado/core/` line by line for `vim.` and for requires of
    `ado.nvim` modules, as a backstop for core code no test runs.
 3. Runs `tests/core/` specs in the sandbox (`tests/support/sandbox.lua`): a
@@ -787,7 +794,7 @@ write guard and the error notifier wrap whichever transport is configured.
    loader and debug globals, and that allows requires of `ado.core.*` and
    `tests.*` only. This enforces RFC 0001 R6.1: the core must not reference
    Neovim.
-4. Runs `tests/nvim/` specs with the real `vim`, against the fake transport.
+4. Runs `tests/nvim/` specs with the real `vim`, against the fake gateway.
 
 The presentation specs share one editor, so a spec that changes global state
 (the configuration, `vim.ui.select`) can change how a later spec runs. Each
