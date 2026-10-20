@@ -14,7 +14,7 @@ function M.setup(opts)
     return
   end
   config.setup(opts)
-  if vim.fn.executable("az") ~= 1 then
+  if not config.get().transport and vim.fn.executable("az") ~= 1 then
     vim.notify("[ado] az CLI not found; work-item actions will no-op", vim.log.levels.WARN)
   end
 end
