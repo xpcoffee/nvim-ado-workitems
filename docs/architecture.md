@@ -709,19 +709,24 @@ since the load would replace the edits.
 ## Write guard
 
 The write guard (`lua/ado/core/write_guard.lua`) limits which work items the
-plugin may change. It exists for agent-run and manual tests against the real
-organisation: an organisation may watch work items of one type, such as `Issue`, so a test
-write to one could notify people. It is unrelated to the revision check, the
+plugin may change, so that manual and agent-run tests against a real
+organisation cannot touch items outside one area, and an organisation can
+name types no write may touch, such as a type that notifies people when
+it changes. It is unrelated to the revision check, the
 `test` on `/rev` that each patch starts with, which makes ADO refuse a write
 when the item changed since it was loaded.
 
-It is off by default. Turn it on through `setup()`:
+It is on by default and fails closed: the default `write_guard` is `{}`,
+which has no `area`, so every write is refused until `setup()` names one:
 
 ```lua
 require("ado").setup({
-  write_guard = { area = "Project\\Area", deny_types = { "Issue" } },
+  write_guard = { area = "Project\\Area", deny_types = { "Incident" } },
 })
 ```
+
+`write_guard = false` turns the guard off; the test suite does this for
+specs that are not about the guard.
 
 With the guard on:
 
@@ -732,8 +737,9 @@ With the guard on:
   starts with it, and a create or retitle must keep it. Agent-run checks
   set it, so they cannot write to an item they did not create.
 - A write to an item whose type is in `deny_types` is refused, and so is a
-  change of type to a denied type. `deny_types` defaults to `{ "Issue" }`.
-- With no `area` set, every write is refused.
+  change of type to a denied type. `deny_types` defaults to none.
+- With no `area` set, every write is refused, and the message names the
+  `setup()` option to set.
 - An operation the guard has no rule for is refused, so an operation added to
   the transport later is blocked until someone writes its rule.
 - A refusal never reaches the transport. The caller receives an error of kind

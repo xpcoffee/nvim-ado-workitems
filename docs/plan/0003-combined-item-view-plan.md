@@ -114,7 +114,7 @@ Deviations from the plan and the RFC, each low risk. Those marked **changes beha
 6. **The description's lines are wrapped to the window** when the details are written (`core/item_details.wrap`), with list items' continuation lines under their text; a resize does not wrap them again until the next render. The markdown in the float is not wrapped.
 7. **The header end follows a boundary row pasted higher up**, so the rows below it count as read-only text and the save rejects; a boundary moved lower leaves the header end where the boundary was.
 8. **`K` uses Neovim's floating preview** (`vim.lsp.util.open_floating_preview`), so `K` twice enters the float to scroll it, as `K` does for LSP hover.
-9. **`layout.toggle_item()` takes no ID**, since no detail buffer names one; `toggle_item_view()` keeps its name and behaviour for the dotfiles key.
+9. **`layout.toggle_item()` takes no ID**, since no detail buffer names one; `toggle_item_view()` keeps its name and behaviour for the key bound to it.
 10. **The search picker's `<C-s>` still writes a state at once** through `update_if_unchanged`. RFC 0003 does not cover the picker; G3 applies to the item buffer.
 11. **A test-harness leak fixed**: headless Neovim kept the first window 80 columns wide until a split, so `realign_spec` failed when run first (`ORDER=shuffle` or `ONLY=`). `views.fresh()` now rebuilds the layout.
 

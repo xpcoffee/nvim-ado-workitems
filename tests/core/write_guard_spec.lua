@@ -35,6 +35,7 @@ local function link(target, rel)
 end
 
 -- Seed areas: 101 and 111 (an Issue) are in P\Team\A; 104 is in P\Team\B.
+-- Most cases deny Issue, so they also cover the type rules.
 local function guarded(opts)
   local fake = Fake.new(seed)
   local created = {}
@@ -42,7 +43,7 @@ local function guarded(opts)
     table.insert(created, params)
     cb(nil, { id = 900, rev = 1, fields = {} })
   end
-  local g = write_guard.wrap(fake, opts or { area = "P\\Team\\A" })
+  local g = write_guard.wrap(fake, opts or { area = "P\\Team\\A", deny_types = { "Issue" } })
   return g, fake, created
 end
 
@@ -126,7 +127,7 @@ test("a type change between allowed types inside the area reaches the transport"
 end)
 
 test("assignee and tag updates get the same checks as any other field", function()
-  local g, fake = guarded({ area = "P\\Team\\A", title_prefix = "Write" })
+  local g, fake = guarded({ area = "P\\Team\\A", deny_types = { "Issue" }, title_prefix = "Write" })
   for _, fields in ipairs({ { ["System.AssignedTo"] = "me@example.com" }, { ["System.AssignedTo"] = "" },
     { ["System.Tags"] = "a; b" } }) do
     eq(result_of(g, "patch_work_item", edit(101, fields)), nil)
@@ -213,7 +214,7 @@ test("a link removed by index checks the item at that index, read from the item'
 end)
 
 test("every field in a patch is checked: type, title and area, and a field with no rule is refused", function()
-  local g, fake = guarded({ area = "P\\Team\\A", title_prefix = "Write" })
+  local g, fake = guarded({ area = "P\\Team\\A", deny_types = { "Issue" }, title_prefix = "Write" })
   local cases = {
     { set("System.State", "Doing"), set("System.WorkItemType", "Issue"), "changing a type to Issue" },
     { set("System.Title", "Other"), "the new title does not start with 'Write'" },
@@ -266,11 +267,19 @@ test("an operation the guard has no rule for is refused", function()
   ok(err.message:find("no rule for this operation", 1, true))
 end)
 
-test("with no area configured every write is refused", function()
+test("with no area configured every write is refused, naming the setup option", function()
   local g, fake = guarded({})
   local err = result_of(g, "patch_work_item", edit(101, { ["System.Title"] = "x" }))
   ok(err.message:find("no allowed area", 1, true))
+  ok(err.message:find('set write_guard = { area = "Project\\\\Area" } in setup()', 1, true), err.message)
   eq(#fake.calls, 0)
+end)
+
+test("with no deny_types, no type is denied", function()
+  local g, fake = guarded({ area = "P\\Team\\A" })
+  local err = result_of(g, "patch_work_item", edit(111, { ["System.Title"] = "x" }))
+  eq(err, nil)
+  eq(#fake.writes, 1)
 end)
 
 test("a failed read refuses the write", function()

@@ -2,7 +2,7 @@
 
 - Status: Draft, for review before implementation planning
 - Date: 2026-10-11
-- Scope: `nvim-ado-workitems` (loaded by the dotfiles spec `lua/plugins/ado.lua`)
+- Scope: `nvim-ado-workitems` (loaded by the user's plugin spec (for example `lua/plugins/ado.lua`))
 
 The key words MUST, SHOULD and MAY follow RFC 2119: MUST is required for the first release, SHOULD is expected unless planning finds a reason against it, MAY is optional.
 

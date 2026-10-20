@@ -37,6 +37,26 @@ test("with write_guard off, the same write goes through", function()
   eq(#fake.writes, 1)
 end)
 
+test("with write_guard left unset, writes are refused and the message names the setup option", function()
+  local session, fake, notes = fresh({ project = "P" })
+  local item
+  session.get():get(101, function(_, it) item = it end)
+  local refused
+  session.get():update_if_unchanged(item, { title = "x" }, function(err) refused = err end)
+  eq(refused.kind, "invalid")
+  eq(#fake.writes, 0)
+  ok(notes[1].msg:find("set write_guard = { area = ", 1, true), notes[1].msg)
+end)
+
+test("with no org and no transport, the session names the setup option", function()
+  require("ado.config").reset()
+  require("ado.config").setup({ org = "" })
+  local session = require("ado.nvim.session")
+  session.reset()
+  fails(function() session.get() end, "no organisation configured: set org in")
+  session.reset()
+end)
+
 test("ensure_project picks a project once and keeps it", function()
   local session, fake = fresh({ write_guard = false, project = false })
   local prompts = 0

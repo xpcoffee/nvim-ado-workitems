@@ -2,7 +2,7 @@
 
 - Status: Accepted with changes. The owner answered the questions on 2026-10-16 (section 14): Q1 to Q3 and Q5 to Q9 accepted as recommended, Q4 rejected, so the header gains no `iteration:` line. Planned in [plan 0003](../plan/0003-combined-item-view-plan.md).
 - Date: 2026-10-16
-- Scope: `nvim-ado-workitems`; the dotfiles spec `lua/plugins/ado.lua` binds its keys
+- Scope: `nvim-ado-workitems`; the user's plugin spec (for example `lua/plugins/ado.lua`) binds its keys
 - Builds on: [RFC 0001](0001-workitem-navigator.md) (views, saving, layout), [plan 0001](../plan/0001-implementation-plan.md) section 8 (owner decisions), [plan 0002](../plan/0002-ux-plan.md) (alignment, fitting, pickers)
 
 The key words MUST, SHOULD and MAY follow RFC 2119, as in RFC 0001. Requirement IDs in this RFC start with `C` (C1.1, C2.1, ...); `R5.14` and similar IDs refer to RFC 0001, and `UX5.4` and similar to plan 0002.
@@ -237,9 +237,9 @@ Q6 asks the owner to confirm each of these.
 | `<leader>wi` (buffer-local) | detail: toggle the item view | removed: the item buffer is the item view |
 | `<leader>wb`, `<leader>wr`, `<leader>wt`, `<Tab>`, `[h`, `]h`, `<leader>wx` | item view | unchanged |
 
-### 10.3 Commands and the owner's dotfiles keys
+### 10.3 Commands and the owner's keys
 
-| Dotfiles key | Function | After this RFC |
+| Key | Function | After this RFC |
 | --- | --- | --- |
 | `<leader>wa` | `toggle_area_view()` | unchanged: toggles the list window |
 | `<leader>wA` | `area_view()` | unchanged: picks an area and opens its view in the list window |
@@ -248,7 +248,7 @@ Q6 asks the owner to confirm each of these.
 | `<leader>wo` | `open_prompt()` | opens the item buffer, not the detail buffer (C6.4) |
 | `<leader>wm`, `<leader>ws` | `my_items()`, `search()` | unchanged; the search picker's `<CR>` opens the item buffer |
 
-- C6.5 The public functions MUST keep their names, so the dotfiles spec needs no change.
+- C6.5 The public functions MUST keep their names, so the user's plugin spec needs no change.
 - C6.6 The search picker's preview MUST keep converting descriptions with pandoc; the conversion moves out of `nvim/detail.lua` into a module of its own, since `nvim/detail.lua` goes (C6.1).
 - C6.7 `K` on an item row MUST show that item's fields and the start of its description in a float, with one `get_work_item` call, keeping the cursor in place. It replaces the preview in the detail split (RFC 0001 R3.5), which goes with that split. `gd` MUST do what `<CR>` does on an item row.
 - C6.8 `<leader>wS` MUST be removed, because it writes a state at once, outside the save (G3); the `state:` line and `<leader>we` set the state instead. The description float MUST move from `<leader>we` to `<leader>wd`, because `<leader>we` is the picker in the item view and one key cannot do both in one buffer.
@@ -323,7 +323,7 @@ Each question lists the recommended default. The owner answered all nine on 2026
 | Q6 rendering | Accepted: a heading line with the local date and time to the minute, the author's display name, and "edited" when `version` is above 1; plain text, mentions as `@Name`, the text indented 4 spaces; newest first. |
 | Q7 first page | Accepted: the first page loads only when the comments come into view. |
 | Q8 heights | Accepted: the item window gets two thirds of the column with the list open, and the whole column alone. |
-| Q9 keys | Accepted: `<leader>wS` removed, the description float on `<leader>wd`, `K` shows the item under the cursor in a float, `gd` does what `<CR>` does. The owner's dotfiles keys `<leader>wa`, `<leader>wA`, `<leader>wi` and `<leader>wI` must keep working unchanged. |
+| Q9 keys | Accepted: `<leader>wS` removed, the description float on `<leader>wd`, `K` shows the item under the cursor in a float, `gd` does what `<CR>` does. The owner's keys `<leader>wa`, `<leader>wA`, `<leader>wi` and `<leader>wI` must keep working unchanged. |
 
 The questions as asked:
 

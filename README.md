@@ -7,26 +7,74 @@ Requires Neovim 0.10+, `az`, and `pandoc` (for the description markdown round-tr
 
 ## Setup
 
+Every value that names your organisation lives in your own configuration;
+the plugin ships with no organisation, project or area of its own. A
+minimal setup names the organisation, the projects with the types their
+rows may take, the areas to browse, and the one area the plugin may write
+to:
+
 ```lua
 require("ado").setup({
-  org = "your-org",       -- defaults to $ADO_ORG, else "example-org"
-  -- The projects lists cover, each with the types its rows may be created as
-  -- or changed to. Without it, lists cover the one project below, which has
-  -- no types, so its rows cannot be created, copied or change type.
+  org = "example-org",
   projects = {
-    { name = "Example", types = { "Task", "User Story", "Feature", "Milestone", "Bug", "Issue" } },
+    { name = "Example", types = { "Task", "User Story", "Bug" } },
   },
-  project = nil,          -- without projects: $AZURE_DEVOPS_EXT_DEFAULT_PROJECT, else a first-use picker
-  default_query_top = 200,
-  description_format = "markdown",
-  -- State categories that count as open in "my work items" and search.
-  open_categories = { "Proposed", "InProgress" },
-  -- Optional: refuse any write outside this area path (and its sub-areas), and
-  -- any write to an item of a denied type. Off unless set. See
-  -- docs/architecture.md for the defaults.
-  -- write_guard = { area = "Project\\Area", deny_types = { "Issue" } },
+  area_paths = { "Example\\Platform\\Team A" },
+  write_guard = { area = "Example\\Platform\\Team A" },
 })
 ```
+
+Until `write_guard.area` is set, every write is refused with a message
+that names it (see "The write guard" below). Reads work without it.
+
+### Options
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `org` | `$ADO_ORG` | The ADO organisation, as in `https://dev.azure.com/<org>`. Required: without it the first call fails with a message naming this option. |
+| `projects` | `nil` | The projects that "my work items", search and the views cover, each with the types its rows may be created as or changed to: `{ { name = "Example", types = { "Task", "Bug" } } }`. A project with no `types` can be read, but its rows cannot be created, copied or change type. |
+| `project` | `$AZURE_DEVOPS_EXT_DEFAULT_PROJECT` | Used only when `projects` is unset: the one project lists cover. When neither is set, a picker asks for a project on first use. |
+| `area_paths` | `{}` | The area paths `area_view()` offers, with `\` or `/` between segments: `{ "Example/Platform/Team A" }`. |
+| `area_filters` | `{ state = "open" }` | The filters a new area view starts with: `state` (`"open"`, `"all"` or a list of state names), `assignee` (`"@Me"` or a name), `types` (a list) and `tag`. |
+| `open_categories` | `{ "Proposed", "InProgress" }` | The state categories that count as open in every list. |
+| `default_query_top` | `200` | The most items one list or search loads. |
+| `description_format` | `"markdown"` | How descriptions are edited: `"markdown"`, `"html"` or `"text"`. Markdown needs `pandoc`. |
+| `link_types` | `{ "System.LinkTypes.Hierarchy", "System.LinkTypes.Related" }` | The link types the item buffer shows. The parent and children always show; each other type gets its own section. |
+| `default_types` | `{ area = "Task", children = "Task" }` | The type a typed line gets when its type column is empty: in an area view, and under an item's Children heading. |
+| `write_guard` | `{}` (no area: every write refused) | Limits writes; see "The write guard" below. `false` turns it off. |
+| `audit_log` | `stdpath("state")/ado-workitems/audit.log` | The file each saved work item's write is logged to, one JSON line each. |
+| `ui` | see "Colours" and "Fitting the window" | `icons` (the state dot and the sign column's markers) and `type_letters` (the letter a type shows as in a narrow window). |
+| `transport` | the `az` transport | Replaces the transport; the test suite passes its fake transport here. |
+
+`setup()` merges each key you pass over the defaults, so a table value
+such as `write_guard` or `ui` replaces the default table whole.
+
+### The write guard
+
+The write guard refuses, before anything reaches ADO, any write to a work
+item outside one area path and its sub-areas. It is on by default and
+fails closed: with no `area` set, every write is refused with a message
+saying to set `write_guard = { area = "Project\\Area" }` in `setup()`.
+
+```lua
+require("ado").setup({
+  write_guard = {
+    -- Writes only to items in this area and its sub-areas (required for any write).
+    area = "Example\\Platform\\Team A",
+    -- Optional: types no write may touch, nor change an item to.
+    deny_types = { "Incident" },
+    -- Optional: writes only to items whose title starts with this text,
+    -- for test runs that must not touch items they did not create.
+    title_prefix = "[test] ",
+  },
+})
+```
+
+Area paths compare case-insensitively, and `/` works in place of `\`.
+`deny_types` defaults to none. To write anywhere the signed-in user may,
+set `area` to a project's name, which covers the whole project, or set
+`write_guard = false`. `docs/architecture.md` describes every rule the
+guard applies.
 
 ## Area view
 
@@ -50,12 +98,8 @@ title, assignee and tags. In an area view:
 The window bar shows the filters and the counts. Edit titles and states in
 place and save with `:w` (see "Editing the views" below).
 
-```lua
-require("ado").setup({
-  area_paths = { "Example\\Software\\Platform\\Team A" },  -- "/" also works
-  area_filters = { state = "open" },  -- default; also assignee, types, tag
-})
-```
+`area_paths` and `area_filters` in `setup()` set the areas offered and the
+filters a view starts with (see "Options").
 
 ## My work items
 
@@ -360,7 +404,8 @@ require("ado").setup({
 
 ## Keymaps
 
-Global (wired by the dotfiles spec): `require("ado").my_items()` / `.search()` /
+The plugin maps no global keys; bind these functions in your own
+configuration: `require("ado").my_items()` / `.search()` /
 `.open_prompt()` / `.toggle_area_view()` / `.area_view()` /
 `.toggle_item_view()` / `.item_view()`.
 

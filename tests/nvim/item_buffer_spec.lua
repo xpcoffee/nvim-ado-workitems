@@ -317,7 +317,7 @@ test("Q5 <leader>wc sends a multi-line comment at once through the write guard, 
 end)
 
 test("<leader>wc is refused while the buffer has unsaved edits, and on an Issue by the write guard", function()
-  local env = setup({ write_guard = { area = "P\\Team" } })
+  local env = setup({ write_guard = { area = "P\\Team", deny_types = { "Issue" } } })
   open_item(100)
   cursor_to("Write API")
   change("A more<Esc>")

@@ -2,7 +2,7 @@
 
 - Status: Draft, for review before implementation planning
 - Date: 2026-10-11
-- Scope: `nvim-ado-workitems` (loaded by the dotfiles spec `lua/plugins/ado.lua`)
+- Scope: `nvim-ado-workitems` (loaded by the user's plugin spec (for example `lua/plugins/ado.lua`))
 
 The key words MUST, SHOULD and MAY follow RFC 2119: MUST is required for the first release, SHOULD is expected unless planning finds a reason against it, MAY is optional.
 
@@ -151,7 +151,7 @@ A row's position in a view stands for a relationship. In an area view, the relat
 - R8.4 `setup()` MUST accept the default types for new lines (R5.18).
 - R8.5 `setup()` SHOULD accept the list of link types the item view shows (Q6).
 - R8.6 `setup()` MUST accept the work item types that rows may be created as or changed to (R5.21). Decision 2026-10-12 (owner): these are set per project, as the `types` of each entry in the `projects` setting ([RFC 0002](0002-open-state-filter.md) R1.8), rather than as one global `types` list. Decision 2026-10-12 (owner): in a project with no `types`, any edit that sets a type (a new line, a copy or a type change) MUST reject the save and name the row, and the message MUST name the project, show the `setup()` entry to add and list the types the project's catalog has. When a project's catalog loads and its `types` names a type the catalog does not have (without regard to case), the plugin MUST warn once per session, naming those entries and listing the valid types, and MUST NOT fail the load.
-- R8.3 The plugin MUST expose functions for the dotfiles spec to bind (`area_view()`, `item_view(id)`), matching how `my_items()` and `search()` are bound today.
+- R8.3 The plugin MUST expose functions for the user's plugin spec to bind (`area_view()`, `item_view(id)`), matching how `my_items()` and `search()` are bound today.
 
 ### R9. Query lists
 
@@ -192,7 +192,7 @@ These are decisions for the plugin owner before or during planning. Each lists a
 - **Q4. Build on oil.nvim or alongside it?** Resolved by spike: the plugin implements its own buffer handling and does not depend on oil.nvim. The spike (branch `spike/oil-adapter`, `docs/spikes/0001-oil-adapter.md`) built an oil adapter over fake data. The core computed the right change plan in all 14 edit scenarios, but only by ignoring oil's diff, which contradicted R5 in 8 of them: for example, oil sends a retitle as a move and a delete-only as a delete. Three problems sit in oil internals that an adapter cannot change. Saving any other oil buffer silently discarded an unsaved work item edit. oil keys rows by name, so two items with the same title showed as one row. Expanding a tree row discarded unsaved edits. The plugin reuses three of oil's ideas instead: a concealed ID prefix on each row (R5.1), one ID registry across buffers so pasted lines keep their identity (R5.2), and a snapshot of rows per buffer.
 - **Q5. Does indentation in the item view's tree carry meaning?** Resolved: no, for the first release. Indentation only displays the tree; reparenting is done by moving rows. Revisit once the editing rules in R5 have been used in practice.
 - **Q6. Which link types does the item view show?** Resolved: parent, child and Related by default, with the list configurable through `setup()` (R8.5).
-- **Q7. Can the type column change an existing item's type?** Resolved: yes, limited to a configured set of types (R5.21, R8.6). A value outside the set is ignored, not applied. The dotfiles configuration will pass `Task`, `User Story`, `Feature`, `Milestone`, `Bug` and `Issue`; `Epic` is deliberately left out.
+- **Q7. Can the type column change an existing item's type?** Resolved: yes, limited to a configured set of types (R5.21, R8.6). A value outside the set is ignored, not applied. The owner's configuration will pass `Task`, `User Story`, `Feature`, `Milestone`, `Bug` and `Issue`; `Epic` is deliberately left out.
 
 ## 8. Acceptance behaviours
 

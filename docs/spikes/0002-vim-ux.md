@@ -162,7 +162,7 @@ In the mockups, `│` separators, `●` dots, the `~`/`+` sign column and the wi
 ### 4.1 Area view at 100 columns
 
 ```text
- Team A  open · any type · anyone                     3 areas · 42 items · 2 edited
+ Team A  open · any type · anyone                                     3 areas · 42 items · 2 edited
   ▸ Reports/
   ▸ Scheduling/
   Bug        │ ● Active   │ Crash when the area path holds a slash │ Jane Doe       │ auth
@@ -176,7 +176,7 @@ In the mockups, `│` separators, `●` dots, the `~`/`+` sign column and the wi
 The type cell is concealed to its letter and tags are hidden on rows; both show in the hover float.
 
 ```text
- Team A…  open                   42 items · 2 edited
+ Team A  open                           42 items · 2 edited
   ▸ Reports/
   ▸ Scheduling/
   B │ ● Active   │ Crash when the area path hold… │ Jane Doe
@@ -190,7 +190,7 @@ The type cell is concealed to its letter and tags are hidden on rows; both show 
 The user runs `cic` on the second row's title and types. The title cell is shown in full and the cells to its right on that line are hidden; the other rows do not move. Here the title itself (76 columns) is wider than the 72 left after the type and state cells, so its end runs past the window edge, and moving the cursor there scrolls the window sideways (`:help 'sidescroll'`). That is the one case fitting cannot avoid: a single cell wider than the window. With approach A the drift on the edited line is at most the cell's growth, and `<Esc>` re-pads.
 
 ```text
- Team A  open · any type · anyone                     3 areas · 42 items · 2 edited
+ Team A  open · any type · anyone                                     3 areas · 42 items · 2 edited
   ▸ Reports/
   ▸ Scheduling/
   Bug        │ ● Active   │ Crash when the area path holds a slash │ Jane Doe       │ auth

@@ -55,11 +55,14 @@ end
 function M.get()
   if not current then
     local c = config.get()
+    if not c.transport and (type(c.org) ~= "string" or c.org == "") then
+      error('[ado] no organisation configured: set org in require("ado").setup(), or $ADO_ORG', 0)
+    end
     local t = c.transport or require("ado.nvim.az").new({ org = c.org })
     -- Order: transport, write guard, notifier, so refusals are notified and
     -- the guard sees raw errors. Callers of core Session methods must not
     -- notify transport errors again. See docs/architecture.md.
-    if c.write_guard then t = write_guard.wrap(t, c.write_guard) end
+    if c.write_guard ~= false then t = write_guard.wrap(t, c.write_guard or {}) end
     current = core_session.new({
       transport = notify_errors(t),
       org = c.org,

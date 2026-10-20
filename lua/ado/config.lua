@@ -4,7 +4,8 @@ local M = {}
 
 local function defaults()
   return {
-    org = os.getenv("ADO_ORG") or "example-org",
+    -- The ADO organisation, as in https://dev.azure.com/<org>. Required.
+    org = os.getenv("ADO_ORG"),
     -- The projects lists cover, each with the types its rows may be created as
     -- or changed to: { { name = "P", types = { "Task", ... } }... }. When nil,
     -- lists cover the one project below.
@@ -28,9 +29,10 @@ local function defaults()
     default_types = { area = "Task", children = "Task" },
     -- State categories that count as open in every list (RFC 0002 R1.3).
     open_categories = { "Proposed", "InProgress" },
-    -- { area = "Project\\Area", deny_types = { "Issue" } } limits writes to that
-    -- area and its sub-areas (core/write_guard.lua). Off by default.
-    write_guard = nil,
+    -- Limits writes to one area and its sub-areas (core/write_guard.lua):
+    -- { area = "Project\\Area", deny_types = { ... }, title_prefix = "..." }.
+    -- Without an area every write is refused; false turns the guard off.
+    write_guard = {},
     -- File the audit log appends one JSON line to per saved change (RFC 0001
     -- R7.4); nil means stdpath("state") .. "/ado-workitems/audit.log".
     audit_log = nil,

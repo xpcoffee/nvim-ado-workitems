@@ -1,8 +1,7 @@
--- Wraps a transport so that, when configured, writes reach ADO only for items
--- in one area path (and its sub-areas) and never for a denied type: the
--- organisation may watch a type, so a test write to one could notify people.
--- Policy and defaults: docs/architecture.md#write-guard. Unrelated to the
--- revision check, the test op on /rev that each patch starts with.
+-- Wraps a transport so that writes reach ADO only for items in one area path
+-- (and its sub-areas) and never for a denied type. Policy and defaults:
+-- docs/architecture.md#write-guard. Unrelated to the revision check, the
+-- test op on /rev that each patch starts with.
 --
 -- A refused write never reaches the inner transport. Checks that need the
 -- target's area and type read it with get_work_item first; the read and the
@@ -44,13 +43,13 @@ local function refusal(op, reason)
   return transport.error("invalid", "write guard refused " .. op .. ": " .. reason)
 end
 
--- opts: area (required to allow any write), deny_types (default { "Issue" }),
+-- opts: area (required to allow any write), deny_types (default none),
 -- title_prefix (optional: writes only to items whose title starts with it,
 -- so a test run cannot touch an item it did not create)
 function M.wrap(inner, opts)
   local area = normalise_path(opts.area)
   local deny = {}
-  for _, t in ipairs(opts.deny_types or { "Issue" }) do deny[t:lower()] = true end
+  for _, t in ipairs(opts.deny_types or {}) do deny[t:lower()] = true end
   local prefix = opts.title_prefix
 
   local function denied_type(wtype)
@@ -197,7 +196,8 @@ function M.wrap(inner, opts)
       if READS[op] then
         guarded[op] = fn
       elseif not area then
-        guarded[op] = function(_, cb) cb(refusal(op, "no allowed area is configured")) end
+        guarded[op] = function(_, cb) cb(refusal(op,
+          'no allowed area is configured; set write_guard = { area = "Project\\\\Area" } in setup()')) end
       elseif checks[op] then
         guarded[op] = function(params, cb)
           params = params or {}

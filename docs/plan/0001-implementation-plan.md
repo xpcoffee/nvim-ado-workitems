@@ -33,7 +33,7 @@ Each phase ends with a usable plugin: no phase leaves a feature half-wired behin
 | 5. Structural edits | Move, copy, delete (link removal), new lines, across buffers | A0001-6 to 17, 21, 22, 27 |
 | 6. Remaining columns | Edit assignee, tags and type | A0001-25, 26, 28 to 30 |
 
-Section 9 lists the dotfiles changes, which follow phases 2, 3 and 5.
+Section 9 lists the configuration changes, which follow phases 2, 3 and 5.
 
 ## 3. Module layout
 
@@ -208,7 +208,7 @@ Each acceptance behaviour gets one core test named after it, for example `test("
 
 **Core tests.** `wiql_spec` (today's two queries render byte-identical WIQL, quote escaping), `workitem_spec` (normalise with and without `_links`, missing assignee), `sandbox_spec` (a fixture module that reads `vim` fails; one that requires `ado.nvim.az` fails), `fake_transport_spec` (calls recorded, `fail_on`, deferred mode), `write_guard_spec` (a write outside the area, to an `Issue`, or changing a type to `Issue` is refused with zero transport calls; reads pass through).
 
-**Manual check.** With the dotfiles unchanged: `<leader>wm`, `<leader>ws`, `<leader>wo`, then in a detail buffer edit a title with `<CR>` and reload with `<leader>wr`.
+**Manual check.** With the user configuration unchanged: `<leader>wm`, `<leader>ws`, `<leader>wo`, then in a detail buffer edit a title with `<CR>` and reload with `<leader>wr`.
 
 **Exit criteria.** `make test` passes and the static scan finds nothing; the manual check behaves as on `main`; no file outside `lua/ado/nvim/` and `lua/ado/init.lua` / `config.lua` calls `vim`.
 
@@ -224,7 +224,7 @@ Result, 2026-10-11: states carry `category` (assumption 2 holds), so the catalog
 
 **Phase 1b, 2026-10-12: configured projects.** Delivers the owner decision "Configured projects" in section 8 (RFC 0002 R1.8, R1.9, A0002-4). Changes `core/query.lua` (`scope`: the project condition, with each project's open condition tied to it), `core/session.lua` (projects, one catalog per project, loaded lazily), `config.lua` (`projects`) and `nvim/session.lua`. The `az` transport now returns an empty list when `az boards query` prints nothing, which it does for a query with no results; before, that case was reported as "failed to parse az output". The real-data check is recorded below the phase 1 check.
 
-Real-data check, 2026-10-11, reads only: "my work items" returned 65 items, all in an open state (200 of 945 in every state, after the `default_query_top` cap). The rendered WIQL is 2,316 characters. The check also found that `az boards query --project P` does not limit WIQL to project P: it searches the whole organisation. "My work items" is unaffected for the owner (all 945 results are in `Example`), but 523 of 1,162 all-states results for "bug" came from other projects (`Documents`, `Operations`, `Sandbox`, `Playground`). The catalog holds only the configured project's types. Items whose type the project lacks (`Risk`, `Request`, `Change`, ...) therefore never appear in the open search, and items of a shared type name (`Bug`, `Task`) are judged by this project's categories. Risk 9 in section 7 records the choice for the owner.
+Real-data check, 2026-10-11, reads only: "my work items" returned 65 items, all in an open state (200 of 945 in every state, after the `default_query_top` cap). The rendered WIQL is 2,316 characters. The check also found that `az boards query --project P` does not limit WIQL to project P: it searches the whole organisation. "My work items" is unaffected for the owner (all 945 results are in `Example`), but 523 of 1,162 all-states results for "bug" came from 4 other projects. The catalog holds only the configured project's types. Items whose type the project lacks (types that only the other projects define) therefore never appear in the open search, and items of a shared type name (`Bug`, `Task`) are judged by this project's categories. Risk 9 in section 7 records the choice for the owner.
 
 Real-data check for phase 1b, 2026-10-12, reads only, through the `az` transport with the write guard on and `projects` set to `Example` only. Open search for "bug": 200 items (the `default_query_top` cap), 0 from other projects, 0 in a state that `Example`'s catalog counts as finished. All-states search for "bug": 200 items, 0 from other projects (on 2026-10-11, 523 of 1,162 came from other projects). "My work items": 65 items, all in `Example`, all open. One catalog load: 23 types, 1 call.
 
@@ -538,7 +538,7 @@ Recorded 2026-10-13, owner request.
 
 - **"My work items" is a query list.** `require("ado").my_items()` opens an editable list of the open items assigned to the user, `ado://query/mine?state=open&type=&tag=`, in the window the area view uses, instead of the Telescope picker. RFC 0001 R9 sets the requirements and acceptance behaviours 31 to 41. The owner set the editing rules: rows stand for no relationship; column edits save; a delete with no paste is "no change"; a paste into the list is rejected; a row cut from the list and pasted into an area view or a child list moves that relationship (area, or parent from the one the row was loaded with); a yanked row is a copy; every other R5 rule applies. The core (`core/query_view.lua`, `core/plan.lua`) has a test for each behaviour. The Telescope picker stays for `search()`, with `<C-s>`, `<C-y>` and `<C-o>`, which the search picker still uses; the picker's `my_items` path is removed. Delivered the same day.
   - Decisions the implementation made, low risk and reversible, for the owner to confirm or correct:
-    - One toggle. The layout's top window is one role, "list", that an area view or a query list fills. `toggle_area_view()` (`<leader>wa` in the dotfiles) closes it, or reopens whichever list it showed last, or asks for an area when none has been shown. A second toggle was not added, because both lists share one window and a second key would only choose which list to reopen.
+    - One toggle. The layout's top window is one role, "list", that an area view or a query list fills. `toggle_area_view()` (`<leader>wa` in the owner's configuration) closes it, or reopens whichever list it showed last, or asks for an area when none has been shown. A second toggle was not added, because both lists share one window and a second key would only choose which list to reopen.
     - The default filters of "mine" are the open state and no type or tag filter. They do not follow `area_filters`, which may set an assignee that "mine" fixes.
     - The buffer name leaves out the assignee, since "mine" fixes it; the window bar shows `assignee: @Me`.
     - A row cut from the list and pasted into a parent row or a link section does what that paste does when the original is kept: it sets the parent or adds the link, and the cut is not listed as "no change".
@@ -546,7 +546,7 @@ Recorded 2026-10-13, owner request.
     - `Session:my_items()` now returns the rows of the default "mine" list, so "my work items" has one definition; its RFC 0002 tests still pass unchanged.
   - Real-data check, 2026-10-13, read-only, through the `az` transport against the `example-org` organisation with `projects = { Example }` and the write guard on: `my_items()` headless loaded the list with 2 calls (the Example type catalog, then one query), 31 rows, not truncated, in 4 distinct states (Active, Exploration, New, Planning). Its browser URL was 1,228 characters, under the 3,000 limit. Editing was tested on the fake transport only.
 
-## 9. Dotfiles changes
+## 9. Configuration changes
 
 For `lua/plugins/ado.lua`, described here and not applied. lazy.nvim loads the plugin from `~/src/nvim-ado-workitems` (`dev = true`), so each phase reaches the owner's editor only once it is merged to `main` there.
 
